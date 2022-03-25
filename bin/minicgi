@@ -1,0 +1,126 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+#h: Usage: $0 ...
+#h:
+#h: Serve CGI services using `mini_httpd(8)`.
+#h:
+#h: ... show                       : Show configuration.
+#h: ... install                    : Download, build and install `mini_httpd(8)`.
+#h: ... run          USER PORT DIR : Execute `mini_httpd`.
+#h: ... create  NAME USER PORT DIR : Create service.
+#h: ... enable  NAME               : Enable service.
+#h: ... disable NAME               : Disable service.
+. hlog
+. hmain
+. vcd
+. vrun
+. hfile
+. getsrc-tar
+minicgi() {
+    local cmd="$1"
+    shift
+    case "${cmd}" in
+        show)    minicgi_show_variables                   ;;
+        install) minicgi_install                          ;;
+        run)     minicgi_exec    "$@"                     ;;
+        create)  minicgi_create  "$@"                     ;;
+        enable)  minicgi_enable  "$@"                     ;;
+        disable) minicgi_disable "$@"                     ;;
+        *)       hlog fatal "Invalid subcommand: ${cmd}." ;;
+    esac
+}
+minicgi_show_variables() {
+    printf '%-15s : %s\n' THTTPD_URL    "${MINI_HTTPD_URL}"
+    printf '%-15s : %s\n' THTTPD_PREFIX "${MINI_HTTPD_PREFIX}"
+}
+minicgi_calc_variables() {
+    THTTPD_URL="${THTTPD_URL:-http://www.acme.com/software/thttpd/thttpd-2.29.tar.gz}"
+    THTTPD_PREFIX="${THTTPD_PREFIX:-/opt/mini_httpd}"
+}
+## -----------------------------------------------------------------------------
+minicgi_install() {
+    local pwd="`pwd`"
+    local src="`getsrc_tar "${THTTPD_URL}"`"
+    vcd + "${src}"
+    vrun ./configure --prefix="${THTTPD_PREFIX}"
+    vrun make
+    vrun sed -i 's|-o bin -g bin||g' Makefile
+    vrun sudo make install SUBDIRS=
+    vcd - "${pwd}"
+}
+minicgi_exec() {
+    local user="$1" port="$2" dir="$3"
+    hlog errif "Please specify a username."  test ! -n "${user}"
+    hlog errif "Please specify a port."      test ! -n "${port}"
+    hlog errif "Please specify a directory." test ! -n "${dir}"
+    exec "${MINI_HTTPD_PREFIX}/sbin/thttpd" \
+         -p "${port}"   \
+         -h "127.0.0.1" \
+         -d "${dir}"    \
+         -c "**.cgi"    \
+         -u "${user}"   \
+         -D
+}
+minicgi_create() {
+    local name="$1" user="$2" port="$3" dir="$4"
+    hlog errif "Please specify a service name." test ! -n "${name}"
+    hlog errif "Please specify a username."     test ! -n "${user}"
+    hlog errif "Please specify a port."         test ! -n "${port}"
+    hlog errif "Please specify a directory."    test ! -n "${dir}"
+    sudo mkdir -p "/etc/sv/${name}"
+    local x="${MINI_HTTPD_PREFIX}/sbin/thttpd"
+    local h="127.0.0.1"
+    local l="/var/log/${name}.log"
+    hfile wrapper sudo "/etc/sv/${name}/run" <<-EOF
+	#!/bin/sh
+	exec "${x}" -p "${port}" -h "${h}" -d "${dir}" -c "**.cgi" -u "${user}" -l "${l}" -D
+	EOF
+}
+minicgi_enable() {
+    local name="$1"
+    hlog errif "Please specify a service name." test ! -n "${name}"
+    if test ! -e /etc/sv/"${name}";then
+        echo "No ${name} service installed."
+    elif test -e /etc/runit/runsvdir/default/"${name}";then
+        sudo sv restart "${name}"
+    else
+        sudo ln -sv /etc/sv/"${name}" /etc/runit/runsvdir/default/"${name}"
+    fi
+}
+minicgi_disable() {
+    local name="$1"
+    hlog errif "Please specify a service name." test ! -n "${name}"
+    if test -e /etc/runit/runsvdir/default/"${name}";then
+        sudo sv down "${name}"
+        sudo rm /etc/runit/runsvdir/default/"${name}"
+    fi
+}
+
+
+
+## -----------------------------------------------------------------------------
+minicgi_calc_variables
+hmain -f "minicgi" minicgi "$@"

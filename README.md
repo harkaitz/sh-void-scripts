@@ -25,6 +25,33 @@ hvoid-https
     ... enable  SSH|- : Enable `https` service. (Only Void Linux).
     ... disable SSH|- : Disable `https` service. (Only Void Linux).
 
+hvoid-server
+
+    Usage: hvoid-server [-r SSH] ...
+    
+    Install base utilities and services I need for operating
+    a server.
+    
+    ... i-all     : i-{nonfree,base,shell,clock5}.
+    
+    ... i-clock5  : Install `clock5` service.
+    ... i-nonfree : Install nonfree repositories.
+    ... i-base    : Base utilities such as `nano`, `wget`, ...
+    ... i-shell   : Configure shell.
+
+minicgi
+
+    Usage: minicgi ...
+    
+    Serve CGI services using `mini_httpd(8)`.
+    
+    ... show                       : Show configuration.
+    ... install                    : Download, build and install `mini_httpd(8)`.
+    ... run          USER PORT DIR : Execute `mini_httpd`.
+    ... create  NAME USER PORT DIR : Create service.
+    ... enable  NAME               : Enable service.
+    ... disable NAME               : Disable service.
+
 ## Collaboration
 
 For making bug reports, feature requests and donations visit one of the
