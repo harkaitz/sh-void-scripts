@@ -52,6 +52,18 @@ minicgi
     ... enable  NAME               : Enable service.
     ... disable NAME               : Disable service.
 
+minidav
+
+    Usage: minidav ...
+    
+    Install `rclone` powered `webdav` service in `Void Linux`.
+    
+    show                             : Show configuration.
+    create  NAME USER PORT DIRECTORY : Install dav service.
+    enable  NAME                     : Enable dav service.
+    disable NAME                     : Disable dav service
+    manage  NAME                     : Open interactive manager.
+
 ## Collaboration
 
 For making bug reports, feature requests and donations visit one of the
