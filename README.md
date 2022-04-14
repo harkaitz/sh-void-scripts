@@ -2,6 +2,10 @@
 
 Void Linux scripts for system administration.
 
+## Dependencies
+
+- [sh-hutil](https://github.com/harkaitz/sh-hutil) - Utility library for shell scripts.
+
 ## Help
 
 hvoid-https
