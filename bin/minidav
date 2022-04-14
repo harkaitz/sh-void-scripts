@@ -31,7 +31,6 @@
 #h:
 #h: Install `rclone` powered `webdav` service in `Void Linux`.
 #h:
-#h: show                             : Show configuration.
 #h: create  NAME USER PORT DIRECTORY : Install dav service.
 #h: enable  NAME                     : Enable dav service.
 #h: disable NAME                     : Disable dav service
@@ -45,7 +44,6 @@ minidav() {
     local cmd="$1"
     shift
     case "${cmd}" in
-        show)    minidav_show_variables ;;
         create)  minidav_create  "$@"   ;;
         enable)  minidav_enable  "$@"   ;;
         disable) minidav_disable "$@"   ;;

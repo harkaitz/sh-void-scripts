@@ -38,6 +38,8 @@ hvoid-server
     ... i-nonfree : Install nonfree repositories.
     ... i-base    : Base utilities such as `nano`, `wget`, ...
     ... i-shell   : Configure shell.
+    
+    ... i-chrony  : Install and enable chrony time daemon.
 
 minicgi
 
@@ -58,11 +60,74 @@ minidav
     
     Install `rclone` powered `webdav` service in `Void Linux`.
     
-    show                             : Show configuration.
     create  NAME USER PORT DIRECTORY : Install dav service.
     enable  NAME                     : Enable dav service.
     disable NAME                     : Disable dav service
     manage  NAME                     : Open interactive manager.
+
+hdav
+
+    Usage: hdav ...
+    
+    Mount DAV filesystems as described in `/etc/hdav.csv` or
+    ${HDAV_CONFIG} as "<DIR>,<URL>,<USER>,<PASS>".
+    
+    ... show           : Show configuration.
+    ... install        : Install "davfs2" package.
+    ... list|l         : List posible mounts.
+    ... mount|m <DIR>  : Mount DAV remote directory.
+    ... umount|u <DIR> : Unmount directory.
+
+hvoid-wm
+
+    Usage: hvoid-wm ...
+    
+    My window manager and terminal configuration for Void Linux and Xorg.
+    
+    Config files:
+    
+        /etc/xsetup.sh    : This is executed by `x-setup-screen`.
+        ~/.background.png : Background image.
+        /etc/xapplets.sh  : This is executed by `x-setup-applets`.
+    
+    Operations:
+    
+        xorg-server          : Install Xorg server, screen light managers.
+        xorg-client          : Install Xorg client software.
+        scripts              : Install all x-* scripts below.
+        x-terminal-emulator  :
+        x-refresh-background :
+        x-setup-screen       :
+        x-setup-applets      :
+        i3-install           : Install I3.
+        i3-xinit             : Configure ~/.xinitrc to run I3.
+
+hvoid-audio
+
+    Usage: hvoid-audio ...
+    
+    Configure and test Audio in a "Void Linux" box.
+    
+    ... install-pulse             : Install pulseaudio and enable bluetooth.
+    ... direct-alsa-to-pulse      : Edit "/etc/asound.conf" to direct to pulse.
+    ... enable-pulse              : Enable "pulseaudio" service
+    ... allow-to-use-pulse [USER] : Add user to groups "pulse,pulse-access".
+    
+    ... enable-applet : Enable audio applet.
+    ... test-audio    : Test installed audio programs.
+
+hvoid-net
+
+    Usage: hvoid-net ...
+    
+    Configure networking in a Void Linux box.
+    
+    ... all               : Install all below.
+    ... bluetooth         : Install and enable "bluez" bluetooth service.
+    ... network-manager   : Install "ConnMan" network manager.
+    ... network-jail      : Install "firejail" network jail.
+    ... network-sniffer-x : Install "wireshark" network sniffer.
+    ... network-traffic   : Install "iptraf" network traffic monitor.
 
 ## Collaboration
 

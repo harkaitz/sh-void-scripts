@@ -1,0 +1,97 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##:
+#h: Usage: $0 ...
+#h:
+#h: Configure networking in a Void Linux box.
+#h:
+#h: ... all               : Install all below.
+#h: ... bluetooth         : Install and enable "bluez" bluetooth service.
+#h: ... network-manager   : Install "ConnMan" network manager.
+#h: ... network-jail      : Install "firejail" network jail.
+#h: ... network-sniffer-x : Install "wireshark" network sniffer.
+#h: ... network-traffic   : Install "iptraf" network traffic monitor.
+. hmain
+. hpkg
+. hlog
+hvoid_net() {
+    local cmd="$1"
+    shift
+    case "${cmd}" in
+        all)               hvoid_net bluetooth
+                           hvoid_net network-manager
+                           hvoid_net network-jail
+                           hvoid_net network-sniffer-x
+                           hvoid_net network-sniffer
+                           hvoid_net network-traffic   ;;
+        bluetooth)         hvoid_net_install_bluez     ;;
+        network-manager)   hvoid_net_install_connman   ;;
+        network-jail)      hvoid_net_install_firejail  ;;
+        network-sniffer-x) hvoid_net_install_wireshark ;;
+        network-sniffer)   hvoid_net_install_tcpdump   ;;
+        network-traffic)   hvoid_net_install_iptraf    ;;
+        *)                 hlog fatal "Invalid subcommand: ${cmd}.";;
+    esac
+}
+## -----------------------------------------------------------------------------
+hvoid_net_install_bluez() {
+    hlog info "Installing bluez bluetooth server ..."
+    hpkg -v -w "bluetoothctl" -i %xbps "bluez"
+    if test ! -e "/etc/runit/runsvdir/default/bluetoothd";then
+        hlog info "Enabling bluetoothd service ..."
+	vrun sudo ln -s "/etc/sv/bluetoothd" "/etc/runit/runsvdir/default/bluetoothd"
+    fi
+}
+hvoid_net_install_connman() {
+    hlog info "Installing connman network manager ..."
+    hpkg -v                                 \
+         -w "connmand" -w "connman-ncurses" \
+         -i %xbps "connman" "connman-ncurses"
+}
+hvoid_net_install_firejail() {
+    hlog info "Installing firejail ..."
+    hpkg -i -w "firejail" %xbps "firejail"
+}
+hvoid_net_install_wireshark() {
+    hlog info "Installing wireshark ..."
+    hpkg -v -i -w "wireshark" %xbps "wireshark-qt" %dpkg "wireshark"
+}
+hvoid_net_install_tcpdump() {
+    hlog info "Installing tcpdump ..."
+    hpkg -v -i -w "tcpdump" %xbps "tcpdump" %dpkg "tcpdump"
+}
+hvoid_net_install_iptraf() {
+    hlog info "Installing iptraf ..."
+    hpkg -v -i -w "iptraf" %xbps "iptraf-ng" %dpkg "iptraf"
+    if test -f "/usr/bin/iptraf-ng";then
+        sudo rm -f "/usr/bin/iptraf"
+        sudo ln -s "/usr/bin/iptraf-ng" "/usr/bin/iptraf"
+    fi
+}
+
+
+## -----------------------------------------------------------------------------
+hmain -f "hvoid-net" hvoid_net "$@"

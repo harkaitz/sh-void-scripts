@@ -1,0 +1,170 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##:
+#h: Usage: $0 ...
+#h:
+#h: Configure and test Audio in a "Void Linux" box.
+#h:
+#h: ... install-pulse             : Install pulseaudio and enable bluetooth.
+#h: ... direct-alsa-to-pulse      : Edit "/etc/asound.conf" to direct to pulse.
+#h: ... enable-pulse              : Enable "pulseaudio" service
+#h: ... allow-to-use-pulse [USER] : Add user to groups "pulse,pulse-access".
+#h:
+#h: ... enable-applet : Enable audio applet.
+#h: ... test-audio    : Test installed audio programs.
+. hlog
+. vrun
+. hmain
+. hterm
+. hfile
+hvoid_audio() {
+    local cmd="$1"
+    shift
+    case "${cmd}" in
+        ##
+        install-pulse)        hvoid_audio_install_pulse        ;;
+        direct-alsa-to-pulse) hvoid_audio_direct_alsa_to_pulse ;;
+        enable-pulse)         hvoid_audio_enable_pulse         ;;
+        allow-to-use-pulse)   hvoid_audio_allow_user "$@"      ;;
+        ##
+        enable-applet) hvoid_audio_enable_applet ;;
+        test-audio)    hvoid_audio_test_audio    ;;
+        ##
+        *) hlog fatal "Invalid subcommand: ${cmd}.";;
+    esac
+}
+hvoid_audio_show_variables() {
+    hterm vars              \
+          -                 \
+          ASOUNDRC_SYSTEM   \
+          ASOUNDRC_USER     \
+          ASOUND_LEFT       \
+          ASOUND_RIGHT      \
+          PULSEAUDIO_CONFIG \
+          -
+}
+hvoid_audio_calc_variables() {
+    ASOUNDRC_SYSTEM="${ASOUNDRC_SYSTEM:-/etc/asound.conf}"
+    ASOUNDRC_USER="${ASOUNDRC_USER:-${HOME}/.asoundrc}"
+    ASOUND_LEFT="${ASOUND_LEFT:-/usr/share/sounds/alsa/Rear_Left.wav}"
+    ASOUND_RIGHT="${ASOUND_RIGHT:-/usr/share/sounds/alsa/Rear_Right.wav}"
+    PULSEAUDIO_CONFIG="${PULSEAUDIO_CONFIG:-/etc/pulse/system.pa}"
+}
+## -----------------------------------------------------------------------------
+hvoid_audio_install_pulse() {
+    hlog info "Installing alsa and pulseaudio ..."
+    hpkg -v                                        \
+         -w "aplay"                                \
+         -w "pulseaudio"                           \
+         -w "pamixer"                              \
+         -w "pa-applet"                            \
+         -w "pasystray"                            \
+         -w "/usr/lib/firmware/aica_firmware.bin"  \
+         -i                                        \
+         %xbps                                     \
+         "alsa-utils" "pulseaudio" "alsa-firmware" \
+         "alsa-plugins" "alsa-plugins-jack"        \
+         "pamixer"                                 \
+         "pa-applet" "pasystray"
+    hlog info "Enabling bluetooth devices in pulseaudio ..."
+    hfile fadd sudo "${PULSEAUDIO_CONFIG}" BLUETOOTH <<-EOF
+	# Search bluetooth devices, Switch on connect.
+	load-module module-bluetooth-discover
+	load-module module-switch-on-connect
+	EOF
+}
+hvoid_audio_direct_alsa_to_pulse() {
+    hlog info "Creating ${ASOUNDRC_SYSTEM} to point alsa to pulseaudio ..."
+    hfile create sudo "${ASOUNDRC_SYSTEM}" <<-EOF
+	pcm.pulse {
+	    type pulse
+	}
+	ctl.pulse {
+	    type pulse
+	}
+	pcm.!default {
+	    type pulse
+	}
+	ctl.!default {
+	    type pulse
+	}
+	EOF
+    hlog info "Deleting ${ASOUNDRC_USER} ..."
+    rm -f "${ASOUNDRC_USER}"
+}
+hvoid_audio_enable_pulse() {
+    hlog info "Enabling pulseaudio service ..."
+    if test ! -e /etc/runit/runsvdir/default/pulseaudio;then
+        vrun sudo ln -s /etc/sv/pulseaudio /etc/runit/runsvdir/default/pulseaudio
+    fi
+}
+hvoid_audio_allow_user() {
+    vrun sudo usermod -aG pulse,pulse-access "${1:-`whoami`}"
+}
+## -----------------------------------------------------------------------------
+hvoid_audio_test_audio() {
+    local al="${ASOUND_LEFT}" ar="${ASOUND_RIGHT}"
+    local sin="sine=frequency=5000:duration=0.5"
+    if ! which aplay >/dev/null 2>&1 || test ! -f "${al}" || test ! -f "${ar}";then
+        hlog info "aplay   : Not tested."
+    elif aplay "${ASOUND_LEFT}" "${ASOUND_RIGHT}" >/dev/null 2>&1;then
+        hlog info "aplay   : It works."
+    else
+        hlog info "aplay   : It fails."
+    fi
+    if ! which ffplay >/dev/null 2>&1;then
+        hlog info "ffplay  : Not installed."
+    elif ffplay -nodisp -autoexit -i "${sin}" -ar 16000 -f lavfi >/dev/null 2>&1;then
+        hlog info "ffplay  : It works."
+    else
+        hlog info "ffplay  : It fails."
+    fi
+    if ! which mplayer >/dev/null 2>&1 || test ! -f "${al}" || test ! -f "${ar}";then
+        hlog info "mplayer : Not tested."
+    elif mplayer "${al}" "${ar}" >/dev/null 2>&1;then
+        hlog info "mplayer : It works."
+    else
+        hlog info "mplayer : It fails."
+    fi
+    if ! which mpv >/dev/null 2>&1 || test ! -f "${al}" || test ! -f "${ar}";then
+        hlog info "mpv     : Not tested."
+    elif mpv "${al}" "${ar}" >/dev/null 2>&1;then
+        hlog info "mpv     : It works."
+    else
+        hlog info "mpv     : It fails."
+    fi
+}
+hvoid_audio_enable_applet() {
+    hlog info "Adding 'AUDIO' field to /etc/xapplets.sh ..."
+    hfile fadd sudo /etc/xapplets.sh AUDIO <<-EOF
+	if which pasystray >/dev/null 2>&1;then
+	    pasystray &
+	fi
+	EOF
+}
+## -----------------------------------------------------------------------------
+hvoid_audio_calc_variables
+hmain -f "hvoid-audio" hvoid_audio "$@"

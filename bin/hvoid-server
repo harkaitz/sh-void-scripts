@@ -35,6 +35,8 @@
 #h: ... i-nonfree : Install nonfree repositories.
 #h: ... i-base    : Base utilities such as `nano`, `wget`, ...
 #h: ... i-shell   : Configure shell.
+#h:
+#h: ... i-chrony  : Install and enable chrony time daemon.
 . hlog
 . vrun
 . hpkg
@@ -81,12 +83,18 @@ hvoid_server() {
             i-base)    base_install    ;;
             i-shell)   shell_install   ;;
             ##
-            *)         hlog fatal "Invalid command: ${cmd}.";;
+            i-chrony)  chrony_install  ;;
+            ##
+            *) hlog fatal "Invalid command: ${cmd}.";;
         esac
     done
 }
-## -----------------------------------------------------------------------------
-## ---- CLOCK5 -----------------------------------------------------------------
+hvoid_server_show_variables() {
+    hterm vars LOCATION
+}
+hvoid_server_calc_variables() {
+    LOCATION="${LOCATION:-Europe/Madrid}"
+}
 ## -----------------------------------------------------------------------------
 clock5_upload() {
     local src="`getsrc_user sh-clock5`"
@@ -109,6 +117,10 @@ clock5_install() {
 }
 ## -----------------------------------------------------------------------------
 nonfree_install() {
+    hlog info "Updating xbps ..."
+    sudo xbps-install -y -S
+    sudo xbps-install -y -u xbps
+    sudo xbps-install -y -u
     hlog info "Installing 'nonfree' and 'multilib' libraries ..."
     hpkg -v                                               \
          -w /usr/share/xbps.d/10-repository-nonfree.conf  \
@@ -117,6 +129,15 @@ nonfree_install() {
          %xbps "void-repo-nonfree" "void-repo-multilib"
 }
 base_install() {
+    hlog info "Installing 'socklog' logging system ..."
+    vrun sudo xbps-install -S -y socklog socklog-void
+    if test ! -e /etc/runit/runsvdir/default/socklog-unix;then
+        vrun sudo ln -s /etc/sv/socklog-unix /etc/runit/runsvdir/default/
+    fi
+    if test ! -e /etc/runit/runsvdir/default/;then
+        vrun sudo ln -s /etc/sv/nanoklogd    /etc/runit/runsvdir/default/
+    fi
+    vrun sudo usermod -a -G socklog "`whoami`"
     hlog info "Installing base utilities ..."
     hpkg -w "which" -w "file" -w "bc" -w "busybox"  `: SH utils`       \
          -w "xlocate"                               `: PKG management` \
@@ -131,6 +152,8 @@ base_install() {
          -w "update-ca-certificates" -w "rngd"      `: System configuration`  \
          -w "iptables"                                                        \
          -w "killall"                                                         \
+         -w "mdp"                                   `: Documentation`         \
+         -w "pass" -w "gpg2" -w "pinentry-tty"      `: Password management`   \
          -i %xbps                               \
          which file bc busybox-huge             \
          xtools                                 \
@@ -143,7 +166,9 @@ base_install() {
          openssl openbsd-netcat socat           \
          miniupnpc                              \
          ca-certificates rng-tools iptables     \
-         psmisc
+         psmisc                                 \
+         mdp                                    \
+         pass gnupg2  pinentry-tty
 }
 shell_install() {
     hlog info "Installing /etc/profile.d/{ps1.sh,aliases.sh} ..."
@@ -157,6 +182,13 @@ shell_install() {
 	alias sudo='sudo PATH=\${PATH} DISPLAY=\${DISPLAY}'
 	EOF
 }
+chrony_install() {
+    hlog info "Installing chrony ..."
+    hpkg -v -w "chronyd" -i %xbps "chrony"
+    if test ! -e /etc/localtime;then
+        sudo ln -sf "/usr/share/zoneinfo/${LOCATION}" "/etc/localtime"
+    fi
+}
 ## -----------------------------------------------------------------------------
 python_install() {
     hpkg -vi -w "pip2" -w "pip" %xbps "python-pip" "python3-pip"
@@ -168,5 +200,6 @@ nodejs_install() {
     hpkg -vi -w "npm" %xbps "pnpm" %rpm "npm" %pacman "npm"
 }
 ## -----------------------------------------------------------------------------
+hvoid_server_calc_variables
 hmain -f "hvoid-server" hvoid_server "$@"
 
