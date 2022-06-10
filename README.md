@@ -25,6 +25,77 @@ setup-base
     ... i-shell   : Configure the shell.
     ... i-chrony  : Install and enable the *chrony* time daemon.
 
+setup-haproxy-https
+
+    Usage: setup-haproxy-https ...
+    
+    Configure a `HTTPS` proxy using `haproxy`. The service name generated
+    is `https`.
+    
+    Supported operating systems: Void Linux.
+    
+    ... install                       : Install `haproxy`.
+    ... list                          : List added redirections.
+    ... add DOMAIN HOST[:PORT] [CERT] : Add https->http redirection.
+    ... del DOMAIN                    : Delete domain.
+    ... enable/status/disable/restart : Manage service.
+
+setup-mpop
+
+    Usage: setup-mpop ...
+    
+    Configure a `POP` mail client using `mpop` for receiving mails. For
+    getting mails type `mpop -a` or `mpop ACCOUNTS...`.
+    
+    Options: user,pass,use_tls,host,tls_certcheck
+    
+    ... show               : Show system configuration.
+    ... install            : Install mpop,mutt,w3m,xpdf,urlview.
+    ... a-list             : List defined accounts.
+    ... a-add NAME OPTS... : Add mpop account.
+    ... a-del NAME...      : Delete mpop accounts.
+
+setup-msmtp
+
+    Usage: setup-msmtp ...
+    
+    Configure a `SMTP` mail client using `msmtp` for sending mails.
+    
+    Options: user,pass,host,port,use_starttls,use_tls,tls_certcheck
+    
+    ... show                    : Show system configuration.
+    ... install                 : Install `msmtp`.
+    ... a-list                  : List system accounts.
+    ... a-add  NAME   OPTS...   : Add system accounts.
+    ... a-test [NAME] [TO-ADDR] : Send a test mail (https://www.mail-tester.com/)
+    ... a-test-mailx ...        : Send a test mail with mailx.
+    ... a-del NAME...           : Delete accounts.
+    ... d-get                   : Get default account.
+    ... d-set ACCOUNT           : Set default account.
+    ... m-set [USERNAME] EMAIL  : Set mapping in /etc/aliases.
+    ... m-del USERNAME...       : Delete mapping from /etc/aliases.
+    ... m-list                  : List mapping in /etc/aliases.
+
+setup-popd
+
+    Usage: setup-popd ...
+    
+    Configure a `POP` and `IMAP` mail retrieval service using `Dovecot`. Ports
+    are 143 and 993.
+    
+    ... show           : Show system configuration.
+    ... install/setup  : Install/configure `dovecot`.
+    ... enable/disable : Manage `dovecot`.
+    ... restart/status : Manage `dovecot`.
+
+setup-scron
+
+    Usage: setup-scron ...
+    
+    ... install-scron                 : Build/Install scron.
+    ... add-service NAME USER TABFILE : Create new service. (Void Linux)
+    ... add-service-user              : Create scron-USERNAME with ~/crontab.
+
 setup-smtpd
 
     Usage: setup-smtpd ...
@@ -69,62 +140,6 @@ setup-smtpd
     ... status            : Check the status of the OpenSMTPD and rspamd service.
     ... dns-record DOMAIN : Print DNS records for domain.
 
-setup-scron
-
-    Usage: setup-scron ...
-    
-    ... install-scron                 : Build/Install scron.
-    ... add-service NAME USER TABFILE : Create new service. (Void Linux)
-    ... add-service-user              : Create scron-USERNAME with ~/crontab.
-
-setup-msmtp
-
-    Usage: setup-msmtp ...
-    
-    Configure a `SMTP` mail client using `msmtp` for sending mails.
-    
-    Options: user,pass,host,port,use_starttls,use_tls,tls_certcheck
-    
-    ... show                    : Show system configuration.
-    ... install                 : Install `msmtp`.
-    ... a-list                  : List system accounts.
-    ... a-add  NAME   OPTS...   : Add system accounts.
-    ... a-test [NAME] [TO-ADDR] : Send a test mail (https://www.mail-tester.com/)
-    ... a-test-mailx ...        : Send a test mail with mailx.
-    ... a-del NAME...           : Delete accounts.
-    ... d-get                   : Get default account.
-    ... d-set ACCOUNT           : Set default account.
-    ... m-set [USERNAME] EMAIL  : Set mapping in /etc/aliases.
-    ... m-del USERNAME...       : Delete mapping from /etc/aliases.
-    ... m-list                  : List mapping in /etc/aliases.
-
-setup-mpop
-
-    Usage: setup-mpop ...
-    
-    Configure a `POP` mail client using `mpop` for receiving mails. For
-    getting mails type `mpop -a` or `mpop ACCOUNTS...`.
-    
-    Options: user,pass,use_tls,host,tls_certcheck
-    
-    ... show               : Show system configuration.
-    ... install            : Install mpop,mutt,w3m,xpdf,urlview.
-    ... a-list             : List defined accounts.
-    ... a-add NAME OPTS... : Add mpop account.
-    ... a-del NAME...      : Delete mpop accounts.
-
-setup-popd
-
-    Usage: setup-popd ...
-    
-    Configure a `POP` and `IMAP` mail retrieval service using `Dovecot`. Ports
-    are 143 and 993.
-    
-    ... show           : Show system configuration.
-    ... install/setup  : Install/configure `dovecot`.
-    ... enable/disable : Manage `dovecot`.
-    ... restart/status : Manage `dovecot`.
-
 setup-thttpd
 
     Usage: setup-thttpd ...
@@ -135,21 +150,6 @@ setup-thttpd
     ... install                    : Download, build and install `thttpd(8)`.
     ... run          USER PORT DIR : Execute `thttpd`.
     ... create  NAME USER PORT DIR : Create service.
-
-setup-haproxy-https
-
-    Usage: setup-haproxy-https ...
-    
-    Configure a `HTTPS` proxy using `haproxy`. The service name generated
-    is `https`.
-    
-    Supported operating systems: Void Linux.
-    
-    ... install                       : Install `haproxy`.
-    ... list                          : List added redirections.
-    ... add DOMAIN HOST[:PORT] [CERT] : Add https->http redirection.
-    ... del DOMAIN                    : Delete domain.
-    ... enable/status/disable/restart : Manage service.
 
 ## Collaboration
 
