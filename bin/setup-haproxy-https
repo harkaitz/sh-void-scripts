@@ -1,0 +1,154 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##:
+#h: Usage: $0 ...
+#h:
+#h: Configure a `HTTPS` proxy using `haproxy`. The service name generated
+#h: is `https`.
+#h:
+#h: Supported operating systems: Void Linux.
+#h:
+#h: ... install                       : Install `haproxy`.
+#h: ... list                          : List added redirections.
+#h: ... add DOMAIN HOST[:PORT] [CERT] : Add https->http redirection.
+#h: ... del DOMAIN                    : Delete domain.
+#h: ... enable/status/disable/restart : Manage service.
+. hlog
+. hpkg
+. vrun
+. hmain
+. hfile
+setup_haproxy_https() {
+    local cmd="$1"
+    shift
+    case "${cmd}" in
+        install) haproxy_install                       ;;
+        list)    setup_haproxy_https_list              ;;
+        add)     setup_haproxy_https_add "$@"          ;;
+        del)     setup_haproxy_https_del "$@"          ;;
+        enable)  hpkg -E @void httpd                   ;;
+        status)  hpkg -V @void httpd                   ;;
+        disable) hpkg -X @void httpd                   ;;
+        restart) hpkg -R @void httpd                   ;;
+        *)       hlog fatal "Invalid argument: ${cmd}" ;;
+    esac
+}
+## -----------------------------------------------------------------------------
+haproxy_install() {
+    hpkg -i                            \
+         -m 'Installing "haproxy" ...' \
+         -w "haproxy"                  \
+         %xbps "haproxy"
+    if hpkg -c @void; then
+        hlog info "Creating /etc/sv/https/run ..."
+        sudo mkdir -p /etc/sv/https
+        hfile wrapper sudo /etc/sv/https/run <<-EOF
+	#!/bin/sh
+	exec `which haproxy` -W -f /etc/sv/https/cfg
+	EOF
+        if test ! -e /etc/sv/https/cfg; then
+            hlog info "Creating /etc/sv/https/cfg ..."
+            hfile create sudo /etc/sv/https/cfg <<-EOF
+		## [HEADER]
+		defaults
+		    option accept-invalid-http-response
+		    option accept-invalid-http-request
+		    timeout connect 10s
+		    timeout client  30s
+		    timeout server  30s
+		frontend https-in
+		    bind *:443
+		    mode tcp
+		    tcp-request inspect-delay 5s
+		    tcp-request content accept if { req_ssl_hello_type 1 }
+		EOF
+        else
+            hlog info "Skipping /etc/sv/https/cfg ..."
+        fi
+    else
+        hlog error "Unsupported platform."
+        return 1
+    fi
+}
+setup_haproxy_https_get_HAPROXY_CFG() {
+    if hpkg -c @void;then
+        HAPROXY_CFG=/etc/sv/https/cfg
+    else
+        hlog error "Unsupported platform."
+        return 1
+    fi
+    if test ! -f "${HAPROXY_CFG}";then
+        hlog error "${HAPROXY_CFG}: The file does not exist."
+        return 1
+    fi
+}
+setup_haproxy_https_list() {
+    setup_haproxy_https_get_HAPROXY_CFG
+    sed -n 's/^ *use_backend  *proxy-.* -i \([^ ]*\).*/\1/p' "${HAPROXY_CFG}"
+}
+setup_haproxy_https_add() {
+    local domain="$1" host_port="$2" certfile="${3:-/etc/ssl/$1.cert}"
+    hlog errif "Please specify a domain name." test ! -n "${domain}"
+    hlog errif "Please specify a host[:port]." test ! -n "${host_port}"
+    hlog errif "${certfile}: File not found."  test ! -e "${certfile}"
+    setup_haproxy_https_get_HAPROXY_CFG
+    local host="`printf '%s\n' "${host_port}" | sed    's|:.*||'  `"
+    local port="`printf '%s\n' "${host_port}" | sed -n 's|.*:||p' `"
+    local port="${port:-80}"
+    local name="`echo "${domain}" | tr '.' '-' | tr '/' '-'`"
+    hlog info "${HAPROXY_CFG}: Adding ${domain} -> ${host}:${port}"
+    hlog info "${HAPROXY_CFG}: Certfile: ${certfile}"
+    sudo sed -i.tmp "
+    /^ *use_backend  *proxy-${name}/d
+    /^frontend https-in/a\ \ \ \ use_backend proxy-${name} if { req_ssl_sni -i ${domain} }
+    " "${HAPROXY_CFG}"
+    hfile fadd sudo "${HAPROXY_CFG}" "HTTPS:${name}" <<-EOF
+	backend proxy-${name}
+	    mode tcp
+	    server loopback-for-tls abns@haproxy-${name} send-proxy-v2
+	frontend https-${name}
+	    mode http
+	    bind abns@haproxy-${name} accept-proxy ssl crt /etc/ssl/${domain}.cert force-tlsv12
+	    use_backend backend-${name}
+	backend backend-${name}
+	    mode http
+	    http-response replace-header location http://(.*) https://\\1
+	    server ${name} ${host}:${port}
+	EOF
+}
+setup_haproxy_https_del() {
+    local domain="$1"
+    hlog errif "Please specify a domain name." test ! -n "${domain}"
+    setup_haproxy_https_get_HAPROXY_CFG
+    local name="`echo "${domain}" | tr '.' '-' | tr '/' '-'`"
+    hlog info "${HAPROXY_CFG}: Deleting ${domain} ..."
+    sudo sed -i.tmp "
+    /^ *use_backend  *proxy-${name}/d
+    /-- HTTPS:${name} --/,/-- HTTPS:${name} --/d
+    " "${HAPROXY_CFG}"
+}
+## -----------------------------------------------------------------------------
+hmain -f "setup-haproxy-https" setup_haproxy_https "$@"

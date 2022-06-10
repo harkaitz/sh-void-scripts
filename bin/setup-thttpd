@@ -23,104 +23,89 @@
 #L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 #L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 #L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##:
 #h: Usage: $0 ...
 #h:
-#h: Serve CGI services using `mini_httpd(8)`.
+#h: Serve CGI services using `thttpd(8)` on HTTP.
 #h:
 #h: ... show                       : Show configuration.
-#h: ... install                    : Download, build and install `mini_httpd(8)`.
-#h: ... run          USER PORT DIR : Execute `mini_httpd`.
+#h: ... install                    : Download, build and install `thttpd(8)`.
+#h: ... run          USER PORT DIR : Execute `thttpd`.
 #h: ... create  NAME USER PORT DIR : Create service.
-#h: ... enable  NAME               : Enable service.
-#h: ... disable NAME               : Disable service.
 . hlog
 . hmain
 . vcd
 . vrun
 . hfile
 . getsrc-tar
-minicgi() {
+setup_thttpd() {
     local cmd="$1"
     shift
     case "${cmd}" in
-        show)    minicgi_show_variables                   ;;
-        install) minicgi_install                          ;;
-        run)     minicgi_exec    "$@"                     ;;
-        create)  minicgi_create  "$@"                     ;;
-        enable)  minicgi_enable  "$@"                     ;;
-        disable) minicgi_disable "$@"                     ;;
+        show)    setup_thttpd_show_variables                   ;;
+        install) setup_thttpd_install                          ;;
+        run)     setup_thttpd_exec    "$@"                     ;;
+        create)  setup_thttpd_create  "$@"                     ;;
         *)       hlog fatal "Invalid subcommand: ${cmd}." ;;
     esac
 }
-minicgi_show_variables() {
-    printf '%-15s : %s\n' THTTPD_URL    "${MINI_HTTPD_URL}"
-    printf '%-15s : %s\n' THTTPD_PREFIX "${MINI_HTTPD_PREFIX}"
+setup_thttpd_show_variables() {
+    printf '%-15s : %s\n'                   \
+           THTTPD_URL    "${THTTPD_URL}"    \
+           THTTPD_PREFIX "${THTTPD_PREFIX}" \
+           THTTPD_BIND   "${THTTPD_BIND}"
 }
-minicgi_calc_variables() {
+setup_thttpd_calc_variables() {
     THTTPD_URL="${THTTPD_URL:-http://www.acme.com/software/thttpd/thttpd-2.29.tar.gz}"
     THTTPD_PREFIX="${THTTPD_PREFIX:-/opt/mini_httpd}"
+    THTTPD_BIND="${THTTPD_BIND:-127.0.0.1}"
 }
 ## -----------------------------------------------------------------------------
-minicgi_install() {
-    local pwd="`pwd`"
-    local src="`getsrc_tar "${THTTPD_URL}"`"
-    vcd + "${src}"
-    vrun ./configure --prefix="${THTTPD_PREFIX}"
-    vrun make
-    vrun sed -i 's|-o bin -g bin||g' Makefile
-    vrun sudo make install SUBDIRS=
-    vcd - "${pwd}"
+setup_thttpd_install() {
+    local pwd="`pwd`" SCRNAME="${SCRNAME}: thttpd"
+    if test ! -e /opt/mini_httpd/sbin/thttpd; then
+        hlog info "Downloading, building and installing ..."
+        vcd + "`getsrc_tar "${THTTPD_URL}"`"
+        vrun ./configure --prefix="${THTTPD_PREFIX}"
+        vrun make
+        vrun sed -i 's|-o bin -g bin||g' Makefile
+        vrun sudo make install SUBDIRS=
+        vcd - "${pwd}"
+    else
+        hlog info "Skipping download/build/install ..."
+    fi
 }
-minicgi_exec() {
+setup_thttpd_exec() {
     local user="$1" port="$2" dir="$3"
     hlog errif "Please specify a username."  test ! -n "${user}"
     hlog errif "Please specify a port."      test ! -n "${port}"
     hlog errif "Please specify a directory." test ! -n "${dir}"
     exec "${MINI_HTTPD_PREFIX}/sbin/thttpd" \
-         -p "${port}"   \
-         -h "127.0.0.1" \
-         -d "${dir}"    \
-         -c "**.cgi"    \
-         -u "${user}"   \
+         -p "${port}"        \
+         -h "${THTTPD_BIND}" \
+         -d "${dir}"         \
+         -c "**.cgi"         \
+         -u "${user}"        \
          -D
 }
-minicgi_create() {
-    local name="$1" user="$2" port="$3" dir="$4"
+setup_thttpd_create() {
+    local name="$1" user="$2" port="$3" dir="$4" SCRNAME="${SCRNAME}: thttpd"
     hlog errif "Please specify a service name." test ! -n "${name}"
     hlog errif "Please specify a username."     test ! -n "${user}"
     hlog errif "Please specify a port."         test ! -n "${port}"
     hlog errif "Please specify a directory."    test ! -n "${dir}"
     sudo mkdir -p "/etc/sv/${name}"
     local x="${MINI_HTTPD_PREFIX}/sbin/thttpd"
-    local h="127.0.0.1"
+    local h="${THTTPD_BIND}"
     local l="/var/log/${name}.log"
+    hlog info "Creating /etc/sv/${name}/run ..."
     hfile wrapper sudo "/etc/sv/${name}/run" <<-EOF
 	#!/bin/sh
 	exec "${x}" -p "${port}" -h "${h}" -d "${dir}" -c "**.cgi" -u "${user}" -l "${l}" -D
 	EOF
 }
-minicgi_enable() {
-    local name="$1"
-    hlog errif "Please specify a service name." test ! -n "${name}"
-    if test ! -e /etc/sv/"${name}";then
-        echo "No ${name} service installed."
-    elif test -e /etc/runit/runsvdir/default/"${name}";then
-        sudo sv restart "${name}"
-    else
-        sudo ln -sv /etc/sv/"${name}" /etc/runit/runsvdir/default/"${name}"
-    fi
-}
-minicgi_disable() {
-    local name="$1"
-    hlog errif "Please specify a service name." test ! -n "${name}"
-    if test -e /etc/runit/runsvdir/default/"${name}";then
-        sudo sv down "${name}"
-        sudo rm /etc/runit/runsvdir/default/"${name}"
-    fi
-}
-
 
 
 ## -----------------------------------------------------------------------------
-minicgi_calc_variables
-hmain -f "minicgi" minicgi "$@"
+setup_thttpd_calc_variables
+hmain -f "setup-thttpd" setup_thttpd "$@"

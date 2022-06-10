@@ -1,0 +1,364 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##:
+#h: Usage: $0 ...
+#h:
+#h: Configure a `SMTP` mail server using `OpenSMTPD` and `rspamd`.
+#h:
+#h: Configuration files:
+#h:  __________________________  _____________________  ________________________
+#h: | /etc/user2mail.cfg:      || /etc/mail2user.cfg: || SMTPD_DIR/domains.cfg |
+#h: |                          || EMAIL1 USER         || DOMAIN1               |
+#h: | USER EMAIL1[,EMAIL2,...] || EMAIL2 USER         || DOMAIN2               |
+#h: |__________________________||_____________________||_______________________|
+#h:  ___________________________________________________
+#h: | /etc/ssl/DOMAIN.cert                              |
+#h: | /etc/ssl/DOMAIN.key                               |
+#h: | /etc/ssl/DOMAIN.dkim-sel  : Contains the DKIM id. |
+#h: | /etc/ssl/DKIM-ID.dkim-key                         |
+#h: | /etc/ssl/DKIM-ID.dkim-pub                         |
+#h: |___________________________________________________|
+#h:
+#h: Service names:
+#h:   - Void Linux : opensmtpd, rspamd
+#h:   - FreeBSD    : smtpd
+#h: PAM files:
+#h:   - Void Linux : smtpd
+#h:   - FreeBSD    : smtpd
+#h: Configuration files:
+#h:   - Void Linux : /etc/smtpd/smtpd.conf
+#h:                  /etc/rspamd/modules.d/dkim_signing.conf
+#h:   - FreeBSD    : /usr/local/etc/mail/smtpd.conf
+#h:                  /usr/local/etc/rspamd/modules.d/dkim_signing.conf
+#h:
+#h: Command line options:
+#h:
+#h: ... show              : Show system configuration.
+#h: ... install           : Install `OpenSMTPD` and `rspamd`.
+#h: ... setup INTFS...    : Setup `OpenSMTPD` and `rspamd`. (ie: lo eth0)
+#h: ... domain-add DOMAIN : Configure to service a domain.
+#h: ... domain-ls         : List serviced domains.
+#h: ... enable            : Enable OpenSMTPD and rspamd services.
+#h: ... restart           : Restart OpenSMTPD and rspamd  services.
+#h: ... status            : Check the status of the OpenSMTPD and rspamd service.
+#h: ... dns-record DOMAIN : Print DNS records for domain.
+. hlog
+. hpkg
+. hmain
+. hfile
+. hterm
+. vrun
+setup_smtpd() {
+    local cmd="$1"
+    shift
+    case "${cmd}" in
+        show)        setup_smtpd_show_variables               ;;
+        install)     setup_smtpd_install_software             ;;
+        setup)       setup_smtpd_setup_software "$@"          ;;
+        smtpd.conf)  setup_smtpd_print_smtpd_config           ;;
+        domain-add)  setup_smtpd_domain_add "$@"              ;;
+        domain-ls)   setup_smtpd_domain_ls  "$@"              ;;
+        enable)      setup_smtpd_enable                       ;;
+        restart)     setup_smtpd_restart                      ;;
+        status)      setup_smtpd_status                       ;;
+        dns-record)  setup_smtpd_dns_record "$@"              ;;
+        *)           hlog fatal "Invalid argument: ${cmd}."   ;;
+    esac
+}
+setup_smtpd_show_variables() {
+    printf '%-25s : %s\n'                                    \
+           SETUP_SSL_DIR          "${SETUP_SSL_DIR}"         \
+           SETUP_SMTPD_HOSTNAME   "${SETUP_SMTPD_HOSTNAME}"  \
+           SETUP_SMTPD_IPADDR     "${SETUP_SMTPD_IPADDR}"    \
+           SETUP_SMTPD_PROTOCOLS  "${SETUP_SMTPD_PROTOCOLS}" \
+           SETUP_SMTPD_USER2MAIL  "${SETUP_SMTPD_USER2MAIL}" \
+           SETUP_SMTPD_MAIL2USER  "${SETUP_SMTPD_MAIL2USER}" \
+           SETUP_SMTPD_DOMAINS    "${SETUP_SMTPD_DOMAINS}"
+}
+setup_smtpd_calc_variables() {
+    SETUP_SSL_DIR="${SETUP_SSL_DIR:-/etc/ssl}"
+    SETUP_SMTPD_IPADDR="${SETUP_SMTPD_IPADDR:-}"
+    SETUP_SMTPD_HOSTNAME="${SETUP_SMTPD_HOSTNAME:-`uname -n | sed 's|^[^\.]*\.||'`}"
+    SETUP_SMTPD_PROTOCOLS="${SETUP_SMTPD_PROTOCOLS:-tls smtps}"
+    SETUP_SMTPD_USER2MAIL="${SETUP_SMTPD_USER2MAIL:-/etc/user2mail.cfg}"
+    SETUP_SMTPD_MAIL2USER="${SETUP_SMTPD_MAIL2USER:-/etc/mail2user.cfg}"
+    if test -n "${SETUP_SMTPD_DOMAINS}"; then
+        true
+    elif hpkg -c @freebsd; then
+        SETUP_SMTPD_DOMAINS="/usr/local/etc/mail/domains.cfg"
+    else
+        SETUP_SMTPD_DOMAINS="/etc/smtpd/domains.cfg"
+    fi
+}
+## -----------------------------------------------------------------------------
+setup_smtpd_install_software() {
+    if hpkg -c @void; then
+        hpkg -m "Installing OpenSMTPD and rspamd ..."  \
+             -w "smtpd"                                \
+             -w "rspamd"                               \
+             -w "msmtp"                                \
+             -w "mutt"                                 \
+             -w "/usr/libexec/opensmtpd/filter-rspamd" \
+             -w "/usr/libexec/opensmtpd/table-passwd"  \
+             -i %xbps                                  \
+             "opensmtpd"                               \
+             "rspamd"                                  \
+             "msmtp"                                   \
+             "mutt"                                    \
+             "opensmtpd-filter-rspamd"                 \
+             "opensmtpd-extras"
+        sudo groupadd ssl 2>/dev/null || true
+        sudo usermod -a -G ssl rspamd || true
+        sudo usermod -a -G ssl _smtpd || true
+    elif hpkg -c @freebsd; then
+        hpkg -m "Installing OpenSMTPD and rspamd ..." \
+             -w "/usr/local/sbin/smtpd"               \
+             -w "/usr/local/bin/rspamd"               \
+             -w "msmtp"                               \
+             -w "mutt"                                \
+             -w "/usr/local/libexec/opensmtpd/opensmtpd-filter-rspamd" \
+             -i %pkg                                  \
+             "opensmtpd"                              \
+             "rspamd"                                 \
+             "msmtp"                                   \
+             "mutt"                                    \
+             "opensmtpd-filter-rspamd"
+        sudo pw groupadd ssl 2>/dev/null || true
+        sudo pw group mod ssl -m _smtpd  || true
+        sudo pw group mod ssl -m _smtpq  || true
+        sudo pw group mod ssl -m rspamd  || true
+        hlog info "Disabling sendmail in /etc/rc.conf ..."
+        hfile cfadd sudo /etc/rc.conf          \
+              sendmail_enable=\"NONE\"         \
+              sendmail_msp_queue_enable=\"NO\" \
+              sendmail_outbound_enable=\"NO\"  \
+              sendmail_submit_enable=\"NO\"
+    else
+        hlog fatal "Unsupported platform."
+    fi
+}
+setup_smtpd_setup_software() {
+    local cfg="`setup_smtpd_print_smtpd_config "$@"`"
+    test -n "${cfg}"
+    if hpkg -c @freebsd; then
+        hlog info "Creating /usr/local/etc/mail/smtpd.conf ..."
+        printf '%s\n' "${cfg}" | hfile create sudo /usr/local/etc/mail/smtpd.conf
+    else
+        hlog info "Creating /etc/smtpd/smtpd.conf ..."
+        printf '%s\n' "${cfg}" | hfile create sudo /etc/smtpd/smtpd.conf
+    fi
+    hlog info "Creating ${SETUP_SMTPD_DOMAINS} ..."
+    sudo touch "${SETUP_SMTPD_DOMAINS}"
+    hlog info "Creating ${SETUP_SMTPD_USER2MAIL} ..."
+    sudo touch "${SETUP_SMTPD_USER2MAIL}"
+    hlog info "Creating ${SETUP_SMTPD_MAIL2USER} ..."
+    sudo touch "${SETUP_SMTPD_MAIL2USER}"
+}
+setup_smtpd_print_smtpd_config() {
+    local code=";## AUTOGENERATED BY SETUP-SMTPD;"
+    ## Add SSL certificates.
+    local pkey="${SETUP_SSL_DIR}/${SETUP_SMTPD_HOSTNAME}.key"
+    local cert="${SETUP_SSL_DIR}/${SETUP_SMTPD_HOSTNAME}.cert"
+    hlog errif "${pkey}: File does not exist." test ! -e "${pkey}"
+    hlog errif "${cert}: File does not exist." test ! -e "${cert}"
+    local code="${code};pki \"${SETUP_SMTPD_HOSTNAME}\" key  \"${pkey}\""
+    local code="${code};pki \"${SETUP_SMTPD_HOSTNAME}\" cert \"${cert}\""
+    ## Configure to use rspamd.
+    if hpkg -c @freebsd; then
+        local filter="/usr/local/libexec/opensmtpd/opensmtpd-filter-rspamd"
+    else
+        local filter="/usr/libexec/opensmtpd/filter-rspamd"
+    fi
+    local code="${code};filter \"rspamd\" proc-exec \"${filter}\""
+    ## Add tables.
+    local code="${code};table u2m \"file:${SETUP_SMTPD_USER2MAIL}\""
+    local code="${code};table m2u \"file:${SETUP_SMTPD_MAIL2USER}\""
+    ## Add listening ports.
+    for intf in "$@";do
+        for proto in ${SETUP_SMTPD_PROTOCOLS};do
+            case "${proto}-${intf}" in
+                tls-lo*|tls-127.0.0.1)
+                    local code="${code};listen on ${intf} tls auth-optional"
+                    local code="${code} senders <u2m> masquerade"
+                    local code="${code} hostname \"${SETUP_SMTPD_HOSTNAME}\""
+                    local code="${code} pki \"${SETUP_SMTPD_HOSTNAME}\""
+                    local code="${code} filter \"rspamd\""
+                    ;;
+                smtps-lo*|smtps-127.0.0.1)
+                    local code="${code};listen on ${intf} smtps auth-optional"
+                    local code="${code} senders <u2m> masquerade"
+                    local code="${code} hostname \"${SETUP_SMTPD_HOSTNAME}\""
+                    local code="${code} pki \"${SETUP_SMTPD_HOSTNAME}\""
+                    local code="${code} filter \"rspamd\""
+                    ;;
+                tls-*)
+                    local code="${code};listen on ${intf} tls"
+                    local code="${code} hostname \"${SETUP_SMTPD_HOSTNAME}\""
+                    local code="${code} pki \"${SETUP_SMTPD_HOSTNAME}\""
+                    local code="${code} filter \"rspamd\""
+                    ;;
+                smtps-*)
+                    local code="${code};listen on ${intf} smtps auth-optional"
+                    local code="${code} senders <u2m> masquerade"
+                    local code="${code} hostname \"${SETUP_SMTPD_HOSTNAME}\""
+                    local code="${code} pki \"${SETUP_SMTPD_HOSTNAME}\""
+                    local code="${code} filter \"rspamd\""
+                    ;;
+            esac
+        done
+    done
+    ## Relay authenticated.
+    local code="${code};action \"local\" maildir virtual <m2u>"
+    local code="${code};include \"${SETUP_SMTPD_DOMAINS}\""
+    local code="${code};action \"SEND\" relay"
+    local code="${code};match from any   auth for any action \"SEND\""
+    local code="${code};match from local      for any action \"SEND\""
+    printf '%s\n' "${code}" | tr ';' '\n'
+}
+## -----------------------------------------------------------------------------
+setup_smtpd_domain_add() { # DOMAINS...
+    local d=
+    local c_smtpd="${SETUP_SMTPD_DOMAINS}"
+    if hpkg -c @freebsd; then
+        local c_dkim="/usr/local/etc/rspamd/modules.d/dkim_signing.conf"
+    else
+        local c_dkim="/etc/rspamd/modules.d/dkim_signing.conf"
+    fi
+    hlog errif "${c_smtpd}: File does not exist." test ! -e "${c_smtpd}"
+    hlog errif "${c_dkim}: File does not exist."  test ! -e "${c_dkim}"
+    for d in "$@";do
+        local l="match from any for domain \"${d}\" action \"local\""
+        ## Get selector.
+        local self="${SETUP_SSL_DIR}/${d}.dkim-sel"
+        hlog errif "${self}: File does not exist." test ! -e "${self}"
+        local sel="`cat "${self}"`"
+        hlog errif "${self}: Does not contain a selector." test ! -n "${sel}"
+        ## Get private key.
+        local pkey="${SETUP_SSL_DIR}/${sel}.dkim-key"
+        hlog errif "${pkey}: File does not exist." test ! -e "${pkey}"
+        ## Add domain to OpenSMTPD.
+        if grep "\"${d}\"" "${c_smtpd}" >/dev/null 2>&1;then
+            hlog info "${c_smtpd}: Domain ${d} already in."
+        else
+            hlog info "${c_smtpd}: Adding ${d} ..."
+            sudo l="${l}" f="${c_smtpd}" sh -c 'echo "${l}" >> "${f}"'
+        fi
+        ## Add domain to rspamd.
+        hlog info "${c_dkim}: Adding ${d} ..."
+        hfile fadd sudo "${c_dkim}" "${d}" <<-EOF
+	dkim_signing {
+	    allow_username_mismatch = true;
+	    domain {
+	        ${d} {
+	            path     = "${pkey}";
+		    selector = "${sel}";
+	        }
+	    }
+	}
+	EOF
+    done
+}
+setup_smtpd_domain_ls() {
+    if test -e "${SETUP_SMTPD_DOMAINS}";then
+        sed -n 's|.*domain "\([^"]*\)" .*|\1|p' "${SETUP_SMTPD_DOMAINS}"
+    fi
+}
+## -----------------------------------------------------------------------------
+setup_smtpd_enable() {
+    hpkg -E @void opensmtpd rspamd @freebsd smtpd rspamd
+}
+setup_smtpd_status() {
+    hpkg -V @void opensmtpd rspamd @freebsd smtpd rspamd
+}
+setup_smtpd_restart() {
+    hpkg -RV @void opensmtpd rspamd @freebsd smtpd rspamd
+}
+## -----------------------------------------------------------------------------
+setup_smtpd_dns_record() { # DOMAIN [bind]
+    hlog errif "Please specify a domain." test ! -n "${1}"
+    local domain="$1"
+    ## Get selector.
+    local sel="${SETUP_SSL_DIR}/${domain}.dkim-sel"
+    hlog errif "${sel}: File does not exist." test ! -e "${sel}"
+    local selector="`cat "${sel}"`"
+    hlog errif "${sel}: Empty file." test ! -n "${selector}"
+    ## Get public key.
+    local pub="${SETUP_SSL_DIR}/${selector}.dkim-pub"
+    hlog errif "${pub}: File does not exist." test ! -e "${pub}"
+    ## Get public IP address.
+    if test -n "${SETUP_SMTPD_IPADDR}"; then
+        local ip_public="${SETUP_SMTPD_IPADDR}"
+    else
+        local ip_public="`setup_smtpd_public_ip`"; test -n "${ip_public}"
+    fi
+    ## Print public key.
+    local pubtxt="`sudo sed '1d;$d' "${pub}"`"
+    ##
+    spf1="v=spf1 a mx ip4:${ip_public} ~all"
+    case "${2}" in
+        bind) cat <<-EOF
+		==== ${domain} =================================================
+		${domain}.        IN TXT "${spf1}"
+		${domain}.        MX 0   ${SETUP_SMTPD_HOSTNAME}
+		_dmarc.${domain}. IN TXT "v=DMARC1; p=none"
+		${domain}         IN TXT ("k=rsa;t=s;p="\n' "${selector}._domainkey.${domain}."
+		`printf '%s\n' "${pubtxt}" | sed 's|^|"|;s|$|"|'`
+		)
+		EOF
+              ;;
+        '') cat <<-EOF
+		==== ${domain} ================================================
+		MX
+		${SETUP_SMTPD_HOSTNAME}
+	
+		TXT
+		${spf1}
+
+		_dmarc
+		TXT
+		v=DMARC1; p=none
+	
+		${selector}._domainkey
+		TXT
+		k=rsa;t=s;p=`printf '%s\n' "${pubtxt}" | tr -d '\n'`
+		EOF
+            ;;
+    esac
+}
+## -----------------------------------------------------------------------------
+setup_smtpd_public_ip() {
+    local ip="`dig +short myip.opendns.com @resolver1.opendns.com`"
+    hlog errif "Can't calculate public IP address." test ! -n "${ip}"
+    echo "${ip}"
+}
+## -----------------------------------------------------------------------------
+setup_smtpd_calc_variables
+hmain -f "setup-smtpd" setup_smtpd "$@"
+## 1.- https://wiki.archlinux.org/title/OpenSMTPD#%22Helo_command_rejected:_need_fully-qualified_hostname%22
+## 2.- https://intodns.com/DOMAIN
+## 3.- https://support.google.com/mail/answer/81126
+## 4.- https://www.vultr.com/docs/an-openbsd-e-mail-server-using-opensmtpd-dovecot-rspamd-and-rainloop/
+## 5.- https://www.dmarcanalyzer.com/spf/checker/

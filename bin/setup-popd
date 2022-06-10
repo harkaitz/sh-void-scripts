@@ -1,0 +1,153 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##:
+#h: Usage: $0 ...
+#h:
+#h: Configure a `POP` and `IMAP` mail retrieval service using `Dovecot`. Ports
+#h: are 143 and 993.
+#h:
+#h: ... show           : Show system configuration.
+#h: ... install/setup  : Install/configure `dovecot`.
+#h: ... enable/disable : Manage `dovecot`.
+#h: ... restart/status : Manage `dovecot`.
+. hlog
+. hpkg
+. hmain
+. hfile
+setup_popd() {
+    local cmd="$1"
+    shift
+    case "${cmd}" in
+        show)    setup_popd_show_variables               ;;
+        install) setup_popd_install                      ;;
+        setup)   setup_popd_setup                        ;;
+        enable)  hpkg -E  @void dovecot @freebsd dovecot ;;
+        disable) hpkg -X  @void dovecot @freebsd dovecot ;;
+        restart) hpkg -RV @void dovecot @freebsd dovecot ;;
+        status)  hpkg -V  @void dovecot @freebsd dovecot ;;
+        *)       hlog fatal "Invalid argument: ${cmd}."  ;;
+    esac
+}
+setup_popd_show_variables() {
+    printf '%-30s : %s\n'                                           \
+           SETUP_SSL_DIR                "${SETUP_SSL_DIR}"          \
+           SETUP_POPD_HOSTNAME          "${SETUP_POPD_HOSTNAME}"    \
+           SETUP_POPD_PAM_SERVICE       "${SETUP_POPD_PAM_SERVICE}" \
+           SETUP_DOVECOT_CFGDIR         "${SETUP_DOVECOT_CFGDIR}"   \
+           SETUP_DOVECOT_RUNDIR         "${SETUP_DOVECOT_RUNDIR}"   \
+           SETUP_DOVECOT_CFGDIR_EXAMPLE "${SETUP_DOVECOT_CFGDIR_EXAMPLE}"
+}
+setup_popd_calc_variables() {
+    SETUP_SSL_DIR="${SETUP_SSL_DIR:-/etc/ssl}"
+    SETUP_POPD_HOSTNAME="${SETUP_POPD_HOSTNAME:-`uname -n | sed 's|^[^\.]*\.||'`}"
+    SETUP_POPD_PAM_SERVICE="smtpd"
+    if hpkg -c @void; then
+        local d_DOVECOT_PROGRAM="/usr/bin/dovecot"
+        local d_DOVECOT_CFGDIR="/etc/dovecot"
+        local d_DOVECOT_RUNDIR="/var/run/dovecot"
+        local d_DOVECOT_CFGDIR_EXAMPLE="/usr/share/examples/dovecot"
+    elif hpkg -c @freebsd; then
+        local d_DOVECOT_PROGRAM="/usr/local/sbin/dovecot"
+        local d_DOVECOT_CFGDIR="/usr/local/etc/dovecot"
+        local d_DOVECOT_RUNDIR="/var/run/dovecot"
+        local d_DOVECOT_CFGDIR_EXAMPLE="/usr/local/etc/dovecot/example-config"
+    else
+        local d_DOVECOT_PROGRAM="/usr/bin/dovecot"
+        local d_DOVECOT_CFGDIR="/etc/dovecot"
+        local d_DOVECOT_RUNDIR="/var/run/dovecot"
+        local d_DOVECOT_CFGDIR_EXAMPLE="/usr/share/examples/dovecot"
+    fi
+    SETUP_DOVECOT_PROGRAM="${SETUP_DOVECOT_PROGRAM:-${d_DOVECOT_PROGRAM}}"
+    SETUP_DOVECOT_CFGDIR="${SETUP_DOVECOT_CFGDIR:-${d_DOVECOT_CFGDIR}}"
+    SETUP_DOVECOT_RUNDIR="${SETUP_DOVECOT_RUNDIR:-${d_DOVECOT_RUNDIR}}"
+    SETUP_DOVECOT_CFGDIR_EXAMPLE="${SETUP_DOVECOT_CFGDIR_EXAMPLE:-${d_DOVECOT_CFGDIR_EXAMPLE}}"
+}
+## -----------------------------------------------------------------------------
+setup_popd_install() {
+    hpkg -m 'Installing Dovecot service ...' \
+         -w "${d_DOVECOT_PROGRAM}"           \
+         -i                                  \
+         %xbps "dovecot"                     \
+         %pkg  "dovecot"
+    if hpkg -c @freebsd; then
+        sudo pw groupadd ssl 2>/dev/null || true
+        sudo pw group mod ssl -m dovecot  || true
+        sudo pw group mod ssl -m dovenull || true
+    fi
+}
+setup_popd_setup() {
+    ## Calculate filenames.
+    local cfgdir="${SETUP_DOVECOT_CFGDIR}"
+    local cfgdir_example="${SETUP_DOVECOT_CFGDIR_EXAMPLE}"
+    local rundir="${SETUP_DOVECOT_CFGDIR}"
+    local keyfile="${SETUP_SSL_DIR}/${SETUP_POPD_HOSTNAME}.key"
+    local crtfile="${SETUP_SSL_DIR}/${SETUP_POPD_HOSTNAME}.cert"
+    local pam="${SETUP_POPD_PAM_SERVICE}"
+    ## Check requirements.
+    hlog errif "File ${keyfile} does not exist" test ! -f "${keyfile}"
+    hlog errif "File ${crtfile} does not exist" test ! -f "${crtfile}"
+    ## Create initial configuration.
+    if test ! -d "${cfgdir}"; then
+        hlog info "Filling ${cfgdir} from example files ..."
+        sudo cp -r "${cfgdir_example}" "${cfgdir}"
+    fi
+    if test ! -e "${rundir}"/dovecot.conf && test -d "${rundir}"; then
+        hlog info "Creating ${rundir}/dovecot.conf link ..."
+        sudo ln -s "${cfgdir}/dovecot.conf" "${rundir}/dovecot.conf"
+    fi
+    ## Enable imap and pop3.
+    hlog info "${cfgdir}/dovecot.conf : Enabling only imap and pop3 ..."
+    sudo sed -i".tmp" "
+        s|^\\#* *protocols *=.*|protocols = imap pop3|g
+        " "${cfgdir}/dovecot.conf"
+    ## Set mail directory.
+    hlog info "${cfgdir}/10-mail.conf: Setting maildir to ~/Maildir ..."
+    sudo sed -i".tmp" "
+        s|^\\#*mail_location *= *.*|mail_location = maildir:~/Maildir|g
+        " "${cfgdir}/conf.d/10-mail.conf"
+    ## Set pam.
+    hlog info "${cfgdir}/auth-pam.conf : Creating ..."
+    hfile create sudo "${cfgdir}/auth-pam.conf" <<-EOF
+	auth_debug=yes
+	passdb {
+	    driver = pam
+	    args = ${pam}
+	}
+	userdb {
+	    driver = passwd
+	}
+	EOF
+    ## Set SSL.
+    hlog info "${cfgdir}/10-ssl.conf: Adding SSL certificates ..."
+    sudo sed -i".tmp" "
+        /^\#*ssl *=/s|.*|ssl = yes|g
+        /^ssl_cert *=/s|=.*|= <${crtfile}|g
+        /^ssl_key *=/s|=.*|= <${keyfile}|g
+        " "${cfgdir}/conf.d/10-ssl.conf"
+}
+## -----------------------------------------------------------------------------
+setup_popd_calc_variables
+hmain -f "setup-popd" setup_popd "$@"

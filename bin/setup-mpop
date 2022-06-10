@@ -1,0 +1,176 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##:
+#h: Usage: $0 ...
+#h:
+#h: Configure a `POP` mail client using `mpop` for receiving mails. For
+#h: getting mails type `mpop -a` or `mpop ACCOUNTS...`.
+#h:
+#h: Options: user,pass,use_tls,host,tls_certcheck
+#h:
+#h: ... show               : Show system configuration.
+#h: ... install            : Install mpop,mutt,w3m,xpdf,urlview.
+#h: ... a-list             : List defined accounts.
+#h: ... a-add NAME OPTS... : Add mpop account.
+#h: ... a-del NAME...      : Delete mpop accounts.
+. hlog
+. hmain
+. hpkg
+. hfile
+setup_mpop() {
+    local cmd="$1"
+    shift
+    case "${cmd}" in
+        show)    setup_mpop_show_variables              ;;
+        install) setup_mpop_install                     ;;
+        a-list)  setup_mpop_account_list                ;;
+        a-add)   setup_mpop_account_add "$@"            ;;
+        a-del)   setup_mpop_account_del "$@"            ;;
+        *)       hlog fatal "Invalid argument: ${cmd}." ;;
+    esac
+}
+setup_mpop_show_variables() {
+    printf '%-20s : %s\n'                       \
+           MAIL_REPOSITORY "${MAIL_REPOSITORY}" \
+           MPOP_CFG        "${MPOP_CFG}"        \
+           MUTT_CFG1       "${MUTT_CFG1}"       \
+           MUTT_CFG2       "${MUTT_CFG2}"       \
+           MUTT_CFG3       "${MUTT_CFG3}"       \
+           URLVIEW_CFG     "${URLVIEW_CFG}"     \
+           CA_BUNDLE       "${CA_BUNDLE}"
+}
+setup_mpop_calc_variables() {
+    MAIL_REPOSITORY="${MAIL_REPOSITORY:-${HOME}/Documents/Mail}"
+    MPOP_CFG="${MPOP_CFG:-${HOME}/.mpoprc}"
+    MUTT_CFG1="${MUTT_CFG1:-${HOME}/.mutt/muttrc}"
+    MUTT_CFG2="${MUTT_CFG2:-/etc/mutt/Muttrc}"
+    MUTT_CFG3="${MUTT_CFG3:-/etc/mutt/mailcap}"
+    URLVIEW_CFG="${URLVIEW_CFG:-/etc/urlview.conf}"
+    CA_BUNDLE="${CA_BUNDLE:-/etc/ssl/certs/ca-certificates.crt}"
+}
+## -----------------------------------------------------------------------------
+setup_mpop_install() {
+    hpkg -m 'Installing mpop ...'    -w mpop    -i %xbps mpop
+    hpkg -m 'Installing mutt ...'    -w mutt    -i %xbps mutt
+    hpkg -m 'Installing w3m  ...'    -w w3m     -i %xbps w3m
+    hpkg -m 'Installing xpdf ...'    -w xpdf    -i %xbps xpdf
+    hpkg -m 'Installing urlview ...' -w urlview -i %xbps urlview
+    hpkg -m 'Installing msmtp ...'   -w msmtp   -i %xbps msmtp
+    hlog info "${MUTT_CFG2}: Configuring to use msmtp ..."
+    hfile fadd sudo "${MUTT_CFG2}" SENDMAIL <<-EOF
+	set sendmail="${MSMTP:-`which msmtp`}"
+	set edit_headers=yes
+	EOF
+    hlog info "${MUTT_CFG2}: Assigning urlview to C-b ..."
+    hfile fadd sudo "${MUTT_CFG2}" URLVIEW <<-EOF
+	macro index,pager U "<enter-command>set pipe_decode = yes<enter><pipe-message>urlview<enter><enter-command>set pipe_decode = no<enter>""view URLs"
+	EOF
+    hlog info "${MUTT_CFG2}: Adding HTML support ..."
+    hfile fadd sudo "${MUTT_CFG2}" HTML <<-EOF
+	auto_view text/html                                      # view html automatically
+	alternative_order text/plain text/enriched text/html     # save html for last
+	EOF
+    hlog info "${MUTT_CFG3}: Adding HTML support with w3m ..."
+    hfile fadd sudo "${MUTT_CFG3}" HTML <<-EOF
+	text/html; `which w3m` -I %{charset} -T text/html; copiousoutput;
+	EOF
+    hlog info "${MUTT_CFG3}: Adding PDF support ..."
+    hfile fadd sudo "${MUTT_CFG3}" PDF <<-EOF
+	application/pdf; `which xpdf` %s
+	EOF
+    hlog info "${URLVIEW_CFG}: Setting url handler to xdg-open ..."
+    hfile fadd sudo "${URLVIEW_CFG}" COMMAND <<-EOF
+	COMMAND xdg-open %s
+	EOF
+}
+setup_mpop_account_list() {
+    if test -e "${MPOP_CFG}";then
+        sed -n '
+        \|^account  *default *: *|d 
+        s|^account  *\([^ ][^ ]*\)$|\1|p
+        ' "${MPOP_CFG}"
+    fi
+}
+setup_mpop_account_add() {
+    local from= user= pass= use_tls= tls_certcheck=on
+    if test ! -n "${1}"; then
+        hlog error "Please specify the account name."
+        return 1
+    fi
+    ## Set defaults.
+    local account="$1"
+    shift
+    case "${account}" in
+        *@gmail.com) local host="pop.gmail.com" port="995";;
+        *)           local host=                port="995";;
+    esac
+    case "${port}" in
+        995)    local use_starttls="off" use_tls="on"  ;;
+        *)      local use_starttls="off" use_tls="off" ;;
+    esac
+    ## Get arguments.
+    local "$@"
+    ## Require host and password.
+    hlog errif 'Please specify a `host=HOST`.' test ! -n "${host}"
+    hlog errif 'Please specify a `pass=PASS`.' test ! -n "${pass}"
+    ## Add header.
+    if test ! -f "${MPOP_CFG}"; then
+        hlog info "Adding header to ${MPOP_CFG} ..."
+        hfile create "${MPOP_CFG}" <<-EOF
+	defaults
+	tls            on
+	tls_trust_file ${CERTS_FILE}
+	EOF
+    fi
+    ## Add account.
+    hlog info "Adding to ${MPOP_CFG} account ${account} ..."
+    hfile fadd "${MPOP_CFG}" "${account}" <<-EOF
+	account         ${account}
+	delivery        mbox  ${MAIL_REPOSITORY}/${account}
+	host            ${host}
+	port            ${port}
+	user            "${user:-${account}}"
+	password        "${pass}"
+	tls             ${use_tls}
+	tls_starttls    ${use_starttls}
+	tls_certcheck   ${tls_certcheck}
+	auth            on
+	EOF
+    chmod 0600 "${MPOP_CFG}"
+}
+setup_mpop_account_del() {
+    local account=
+    for account in "$@"; do
+        hlog info "Deleting from ${MPOP_CFG} account ${account} ..."
+        hfile fdel "${MPOP_CFG}" "${account}"
+    done
+}
+
+
+
+## -----------------------------------------------------------------------------
+setup_mpop_calc_variables
+hmain -f "setup-mpop" setup_mpop "$@"

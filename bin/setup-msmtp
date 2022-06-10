@@ -1,0 +1,318 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##:
+#h: Usage: $0 ...
+#h:
+#h: Configure a `SMTP` mail client using `msmtp` for sending mails.
+#h:
+#h: Options: user,pass,host,port,use_starttls,use_tls,tls_certcheck
+#h:
+#h: ... show                    : Show system configuration.
+#h: ... install                 : Install `msmtp`.
+#h: ... a-list                  : List system accounts.
+#h: ... a-add  NAME   OPTS...   : Add system accounts.
+#h: ... a-test [NAME] [TO-ADDR] : Send a test mail (https://www.mail-tester.com/)
+#h: ... a-test-mailx ...        : Send a test mail with mailx.
+#h: ... a-del NAME...           : Delete accounts.
+#h: ... d-get                   : Get default account.
+#h: ... d-set ACCOUNT           : Set default account.
+#h: ... m-set [USERNAME] EMAIL  : Set mapping in /etc/aliases.
+#h: ... m-del USERNAME...       : Delete mapping from /etc/aliases.
+#h: ... m-list                  : List mapping in /etc/aliases.
+. hpkg
+. hlog
+. hterm
+. hmain
+. hfile
+setup_msmtp() {
+    local cmd="$1"
+    shift
+    case "${cmd}" in
+        show)         setup_msmtp_show_variables              ;;
+        install)      setup_msmtp_install                     ;;
+        a-list)       setup_msmtp_account_list                ;;
+        a-print)      setup_msmtp_account_print "$@"          ;;
+        a-add)        setup_msmtp_account_add   "$@"          ;;
+        a-test)       setup_msmtp_account_test  "$@"          ;;
+        a-test-mailx) setup_msmtp_account_test_mailx "$@"     ;;
+        a-del)        setup_msmtp_account_del   "$@"          ;;
+        d-get)        setup_msmtp_default_get   "$@"          ;;
+        d-set)        setup_msmtp_default_set   "$@"          ;;
+        m-set)        setup_msmtp_alias_set     "$@"          ;;
+        m-del)        setup_msmtp_alias_del     "$@"          ;;
+        m-list)       setup_msmtp_alias_list                  ;;
+        *)            hlog fatal "Invalid arguments: ${cmd}." ;;
+    esac
+}
+setup_msmtp_show_variables() {
+    echo "CA Bundle      : ${CA_BUNDLE}"
+    echo "MSMTP          : ${MSMTP}"
+    echo "MSMTP CFG      : ${MSMTP_CFG}"
+    echo "Alias file     : ${ALIAS_FILE}"
+    echo "BSD MAILX      : ${MAILX}"
+    echo "BSD MAILX CFGS : ${MAILX_CFGS}"
+}
+setup_msmtp_calc_variables() {
+    case "`hpkg -D`" in
+        void)
+            local d_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+            local d_MSMTP="/usr/bin/msmtp"
+            local d_MSMTP_CFG="/etc/msmtprc"
+            local d_ALIAS_FILE="/etc/aliases"
+            local d_MAILX="/usr/bin/mail"
+            local d_MAILX_CFGS="/etc/mailx.rc /etc/mail.rc"
+            ;;
+        freebsd)
+            local d_CA_BUNDLE="/usr/local/share/certs/ca-root-nss.crt"
+            local d_MSMTP="/usr/local/bin/msmtp"
+            local d_MSMTP_CFG="/usr/local/etc/msmtprc"
+            local d_ALIAS_FILE="/etc/aliases"
+            local d_MAILX="/usr/bin/mail"
+            local d_MAILX_CFGS="/etc/mailx.rc /etc/mail.rc"
+            ;;
+        *)
+            local d_CA_BUNDLE="/etc/ssl/certs/ca-certificates.crt"
+            local d_MSMTP="/usr/bin/msmtp"
+            local d_MSMTP_CFG="/etc/msmtprc"
+            local d_ALIAS_FILE="/etc/aliases"
+            local d_MAILX="/usr/bin/mail"
+            local d_MAILX_CFGS="/etc/mailx.rc /etc/mail.rc"
+            ;;
+    esac
+    CA_BUNDLE="${CA_BUNDLE:-${d_CA_BUNDLE}}"
+    MSMTP="${MSMTP:-${d_MSMTP}}"
+    MSMTP_CFG="${MSMTP_CFG:-${d_MSMTP_CFG}}"
+    ALIAS_FILE="${ALIAS_FILE:-${d_ALIAS_FILE}}"
+    MAILX="${MAILX:-${d_MAILX}}"
+    MAILX_CFGS="${MAILX_CFGS:-${d_MAILX_CFGS}}"
+}
+## -----------------------------------------------------------------------------
+setup_msmtp_install() {
+    hpkg -m 'Installing CA certificates...' \
+         -w "${CA_BUNDLE}"                  \
+         -i %pkg "ca_root_nss" %xbps "ca-certificates"
+    hpkg -m 'Installing msmtp ...' \
+         -w "${MSMTP}"             \
+         -i %pkg "msmtp"       %xbps "msmtp"
+    hlog info 'Installing BSD mailx ...'
+    if test -e "${MAILX}"; then
+        local mailx_not_found="`mail --version 2>/dev/null | grep GNU`"
+    else
+        local mailx_not_found=y
+    fi
+    if test -n "${mailx_not_found}"; then
+        hpkg -i %xbps "mailx"
+    fi
+    hlog info "Creating wrapper /usr/bin/send-mail ..."
+    hlog info "=> This wrapper takes the MAIL_ACCOUNT environment variable"
+    hlog info "=> and passes it to msmtp."
+    hfile wrapper sudo "/usr/bin/send-mail" <<-EOF
+	#!/bin/sh -e
+	if test -n "\${MAIL_ACCOUNT}";then
+	    exec "${MSMTP}" -a "\${MAIL_ACCOUNT}" "\$@"
+	else
+	    exec "${MSMTP}" "\$@"
+	fi
+	EOF
+    for f in ${MAILX_CFGS}; do
+        hlog info "Editing ${f} to use /usr/bin/send-mail ..."
+        hfile fadd sudo "${f}" MSMTP <<-EOF
+	set sendmail="/usr/bin/send-mail"
+	set mta="/usr/bin/send-mail"
+	EOF
+    done
+}
+setup_msmtp_account_list() {
+    if test -e "${MSMTP_CFG}";then
+        sed -n '
+        \|^account  *default *: *|d 
+        s|^account  *\([^ ][^ ]*\)$|\1|p
+        ' "${MSMTP_CFG}"
+    fi
+}
+setup_msmtp_account_print() {
+    local from= user= pass= use_starttls= use_tls=on
+    local logfile="~/.msmtp.log" tls_certcheck=on
+    if test ! -n "${1}"; then
+        hlog error "Please specify the account name."
+        return 1
+    fi
+    ## Set defaults.
+    local account="$1" 
+    shift
+    case "${account}" in
+        *@gmail.com) local host="smtp.gmail.com" port="465";;
+        *)           local host=                 port="465";;
+    esac
+    case "${port}" in
+        465)    local use_starttls="off";;
+        587|25) local use_starttls="on" ;;
+        *)      local use_starttls="on" ;;
+    esac
+    ## Get arguments.
+    local "$@"
+    ## Point to local server.
+    if test ! -n "${host}"; then
+        hlog error 'Please specify a `host=HOST`.'
+        return 1
+    elif test @"${host}" = @"127.0.0.1"; then
+        local port="25"
+        local use_starttls="off"
+        local tls_certcheck="off"
+    elif test ! -n "${pass}"; then
+        hlog error 'Please specify a `pass=PASS`.'
+        return 1
+    fi
+    ## Print configuration.
+    printf '%-20s %s\n'                         \
+           account        "${account}"          \
+           host           "${host}"             \
+           port           "${port}"             \
+           from           "${from:-${account}}" \
+           tls            "${use_tls}"          \
+           tls_certcheck  "${tls_certcheck}"    \
+           tls_starttls   "${use_starttls}"     \
+           tls_trust_file "${CA_BUNDLE}"        \
+           logfile        "${logfile}"
+    ## Print authentication.
+    if test -n "${pass}"; then
+        printf '%-20s %s\n'                   \
+               auth     "on"                  \
+               user     "${user:-${account}}" \
+               password "\"${pass}\""
+    else
+        printf '%-20s %s\n'               \
+               auth "off"
+    fi
+}
+setup_msmtp_account_add() {
+    local txt="`setup_msmtp_account_print "$@"`"; test -n "${txt}"
+    hlog info "Adding to ${MSMTP_CFG} account ${1} ..."
+    printf '%s\n' "${txt}" | hfile fadd sudo "${MSMTP_CFG}" "$1"
+    local def="`setup_msmtp_default_get`"
+    if test -n "${def}"; then
+        setup_msmtp_default_set "${def}"
+    fi
+}
+setup_msmtp_account_test() {
+    local account="$1" to_addr="$2"
+    if test ! -n "${account}"; then
+        setup_msmtp_account_list
+        local account="`hterm ask "Specify an account" "q"`"
+        test -n "${account}" && test ! @"${account}" = @"q"
+    fi
+    if test ! -n "${to_addr}"; then
+        echo "ie: https://www.mail-tester.com/"
+        local to_addr="`hterm ask "Specify an e-mail address" "q"`"
+        test -n "${to_addr}" && test ! @"${to_addr}" = @"q"
+    fi
+    hlog info "Sending mail to ${to_addr} ..."
+    "${MSMTP}" -a "${account}" "${to_addr}" <<-EOF
+	To: ${to_addr}
+	From: ${account}
+	Subject: Test mail
+	
+	This is a test mail.
+	EOF
+    hlog info "Mail sent."
+}
+setup_msmtp_account_test_mailx() {
+    local account="$1" to_addr="$2"
+    if test ! -n "${account}"; then
+        setup_msmtp_account_list
+        local account="`hterm ask "Specify an account" "${account}"`"
+        test -n "${account}" && test ! @"${account}" = @"q"
+    fi
+    if test ! -n "${to_addr}"; then
+        echo "ie: https://www.mail-tester.com/"
+        local to_addr="`hterm ask "Specify an e-mail address" "${to_addr}"`"
+        test -n "${to_addr}" && test ! @"${to_addr}" = @"q"
+    fi
+    MAIL_ACCOUNT="${account}" "${MAILX}" -s "Test mail" "${to_addr}" <<-EOF
+	Message sent with mailx.
+	EOF
+}
+setup_msmtp_account_del() {
+    local account=
+    for account in "$@"; do
+        hlog info "Deleting from ${MSMTP_CFG} account ${account} ..."
+        hfile fdel sudo "${MSMTP_CFG}" "${account}"
+    done
+}
+## -----------------------------------------------------------------------------
+setup_msmtp_default_get() {
+    if test -f "${MSMTP_CFG}"; then
+        sed -n 's|^account  *default  *: *||p' "${MSMTP_CFG}"
+    fi
+}
+setup_msmtp_default_set() {
+    local account="$1"
+    hlog errif "Please specify an account." test ! -n "${account}"
+    hlog errif "No accounts configured."    test ! -e "${MSMTP_CFG}"
+    local found="`setup_msmtp_account_list | grep "^${account}\$" | head -n 1`"
+    hlog errif "Account ${account} not found." test ! -n "${found}"
+    hlog info "Setting in ${MSMTP_CFG} the default ${found}."
+    sudo sed -i'.tmp' '/^account  *default  */d' "${MSMTP_CFG}"
+    printf 'account default : %s\n' "${found}" | sudo tee -a "${MSMTP_CFG}" >/dev/null
+}
+## -----------------------------------------------------------------------------
+setup_msmtp_alias_set() {
+    if test -n "${1}" && test -n "${2}"; then
+        local user="${1}"
+        local mail="${2}"
+    elif test -n "${1}" && test ! -n "${2}"; then
+        local user="`whoami`"
+        local mail="${1}"
+    elif test ! -n "${1}" && test -n "${2}"; then
+        local user="`whoami`"
+        local mail="${2}"
+    else
+        hlog error "Please specify at least an email address."
+        return 1
+    fi
+    hlog errif "File ${ALIAS_FILE} does not exist." test ! -e "${ALIAS_FILE}"
+    hlog info "${file}: Adding ${user}->${mail} ..."
+    sudo sed -i".bk" "/^${user}:/s|:.*|: ${mail}|g" "${ALIAS_FILE}"
+    sudo rm -f "${ALIAS_FILE}.bk"
+}
+setup_msmtp_alias_del() {
+    local user=
+    hlog errif "File ${ALIAS_FILE} does not exist." test ! -e "${ALIAS_FILE}"
+    for user in "$@"; do
+        hlog info "${ALIAS_FILE}: Deleting ${user} ..."
+        sudo sed -i".bk" "/^${user}:/d" "${ALIAS_FILE}"
+        sudo rm -f "${ALIAS_FILE}.bk"
+    done
+}
+setup_msmtp_alias_list() {
+    hlog errif "File ${ALIAS_FILE} does not exist." test ! -e "${ALIAS_FILE}"
+    cat "${ALIAS_FILE}"
+}
+
+
+## -----------------------------------------------------------------------------
+setup_msmtp_calc_variables
+hmain -f "setup-msmtp" setup_msmtp "$@"

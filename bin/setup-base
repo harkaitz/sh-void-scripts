@@ -1,0 +1,189 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##:
+#h: Usage: $0 SUBCOMMAND...
+#h:
+#h: Install base utilities and services I need for operating
+#h: a server.
+#h:
+#h: ... show      : Show configuration.
+#h: ... i-all     : All below.
+#h:
+#h: ... i-ssl     : Create ssl group.
+#h: ... i-nonfree : Install nonfree repositories.
+#h: ... i-logging : Install logging utilities.
+#h: ... i-base    : Install base utilities and logging.
+#h: ... i-shell   : Configure the shell.
+#h: ... i-chrony  : Install and enable the *chrony* time daemon.
+. hlog
+. vrun
+. hpkg
+. hterm
+. hmain
+. hfile
+setup_base() {
+    local cmd=
+    ## Perform operations.
+    for cmd in "$@";do
+        case "${cmd}" in
+            show)      setup_base_show_variables;;
+            i-all)     ssl_setup; nonfree_install; logging_install; base_install; shell_install; chrony_install;;
+            i-ssl)     ssl_setup       ;;
+            i-nonfree) nonfree_install ;;
+            i-logging) logging_install ;;
+            i-base)    base_install    ;;
+            i-shell)   shell_install   ;;
+            i-chrony)  chrony_install  ;;
+            *) hlog fatal "Invalid command: ${cmd}.";;
+        esac
+    done
+}
+setup_base_show_variables() {
+    hterm vars LOCATION
+}
+setup_base_calc_variables() {
+    LOCATION="${LOCATION:-Europe/Madrid}"
+}
+## -----------------------------------------------------------------------------
+ssl_setup() {
+    hlog info 'Creating "ssl" group ...'
+    sudo sudo groupadd ssl 2>/dev/null || true
+    hlog info "Adding user `whoami` to group \"ssl\" ..."
+    sudo usermod -a -G ssl "`whoami`"
+}
+nonfree_install() {
+    if hpkg -c @void;then
+        hlog info "Updating XBPS and checking updates ..."
+        sudo xbps-install -y -S      >/dev/null 2>&1
+        sudo xbps-install -y -u xbps >/dev/null 2>&1
+        sudo xbps-install -y -u
+        if test @"`uname -m`" = @"x86_64"; then
+            hlog info "Installing 'nonfree' and 'multilib' repositories ..."
+            hpkg -v                                               \
+                 -w /usr/share/xbps.d/10-repository-nonfree.conf  \
+                 -w /usr/share/xbps.d/10-repository-multilib.conf \
+                 -i                                               \
+                 %xbps "void-repo-nonfree" "void-repo-multilib"
+        fi
+    fi
+}
+logging_install() {
+    if hpkg -c @void;then
+        hlog info "Installing 'socklog' logging system ..."
+        if ! which socklog svlogtail >/dev/null 2>&1;then
+            vrun sudo xbps-install -S -y socklog socklog-void
+        fi
+        if test ! -e /etc/runit/runsvdir/default/socklog-unix;then
+            vrun sudo ln -s /etc/sv/socklog-unix /etc/runit/runsvdir/default/
+        fi
+        if test ! -e /etc/runit/runsvdir/default/;then
+            vrun sudo ln -s /etc/sv/nanoklogd    /etc/runit/runsvdir/default/
+        fi
+        hlog info "Adding `whoami` to group socklog ..."
+        sudo usermod -a -G socklog "`whoami`"
+    fi
+}
+base_install() {
+    hpkg -m "I. SH utils: which, file, bc, busybox, killall" \
+         -i -w which -w file -w bc -w busybox -w killall     \
+         %xbps which file bc busybox-huge psmisc
+    hpkg -m "I. PKG management: xlocate" \
+         -i -w xlocate                   \
+         %xbps xtools
+    hpkg -m "I. Internet fetch: wget, curl, git, ssh, aria2c, SSL certificates"  \
+         -i -w wget -w curl -w git -w ssh -w update-ca-certificates -w aria2c -w rngd \
+         %xbps wget curl git openssh ca-certificates aria2c rng-tools
+    hpkg -m "I. text editors: nano, mg" \
+         -i -w nano -w mg               \
+         %xbps nano mg
+    hpkg -m "I. archiving tools: unzip, bzip2, xz, tar, 7z, bsdtar, unrar" \
+         -i -w unzip -w bzip2 -w xz -w tar -w 7z -w bsdtar -w unrar        \
+         %xbps unzip bzip2 xz tar p7zip bsdtar unrar
+    hpkg -m "I. monitors: htop, ncdu, iotop, pstree" \
+         -i -w htop -w ncdu -w iotop -w pstree       \
+         %xbps htop ncdu iotop psmisc
+    hpkg -m "I. network utils: dig, nmap, lsof, netstat, upnpc" \
+         -i -w dig -w nmap -w lsof -w netstat -w upnpc          \
+         %xbps bind-utils nmap lsof net-tools miniupnpc
+    hpkg -m "I. parsers/encoders: qrencode, jq, hxselect, mdp" \
+         -i -w qrencode -w jq -w hxselect -w mdp               \
+         %xbps qrencode jq html-xml-utils mdp
+    hpkg -m "I. network tunnels: openssl, nc, socat, telnet" \
+         -i -w openssl -w nc -w socat -w telnet              \
+         %xbps openssl openbsd-netcat socat inetutils-telnet
+    hpkg -m "I. password management: pass, gpg2, pinentry-tty" \
+         -i -w pass -w gpg2 -w pinentry-tty                    \
+         %xbps pass gnupg2  pinentry-tty
+    hpkg -m "I. System monitors." \
+         -i -w neofetch -w htop \
+         %xbps neofetch htop
+    hpkg -m "I. TUI programs." \
+         -i -w slmenu \
+         %xbps slmenu
+}
+shell_install() {
+    hlog info "Installing /etc/profile.d/ps1.sh ..."
+    local c1= #"`ENFORCE_COLOR=y hterm color lgreen`"
+    local c2= #"`ENFORCE_COLOR=y hterm color`"
+    hfile wrapper sudo /etc/profile.d/ps1.sh <<-EOF
+	export PS1='${c1}[\u@\h]: \\w\\n> ${c2}'
+	export PS2='>> '
+	export TERM='xterm' # ST bug: Working terminal not supported.
+	export PATH="\${HOME}/bin:\${PATH}"
+	EOF
+    hlog info "Installing /etc/profile.d/aliases.sh ..."
+    hfile wrapper sudo /etc/profile.d/aliases.sh <<- EOF
+	alias sudo='sudo PATH=\${PATH} DISPLAY=\${DISPLAY}'
+	EOF
+}
+chrony_install() {
+    hpkg -m "Installing chrony ..." \
+         -w "chronyd" \
+         -i %xbps "chrony"
+    hlog info "Creating /etc/localtime ..."
+    if test ! -e /etc/localtime;then
+        sudo ln -sf "/usr/share/zoneinfo/${LOCATION}" "/etc/localtime"
+    fi
+    hlog info "Creating /etc/runit/runsvdir/default/chronyd ..."
+    if test ! -e /etc/runit/runsvdir/default/chronyd;then
+        sudo ln -s "/etc/sv/chronyd" /etc/runit/runsvdir/default/chronyd
+    fi
+    
+}
+## -----------------------------------------------------------------------------
+python_install() {
+    hpkg -vi -w "pip2" -w "pip" %xbps "python-pip" "python3-pip"
+}
+ruby_install() {
+    hpkg -vi -w "gem" %xbps "ruby" "ruby-devel"
+}
+nodejs_install() {
+    hpkg -vi -w "npm" %xbps "pnpm" %rpm "npm" %pacman "npm"
+}
+## -----------------------------------------------------------------------------
+setup_base_calc_variables
+hmain -f "setup-base" setup_base "$@"
+

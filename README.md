@@ -8,135 +8,153 @@ Void Linux scripts for system administration.
 
 ## Help
 
-hvoid-https
+setup-base
 
-    Usage: hvoid-https ...
-    
-    Configure a `vhost,https` load balancer using `haproxy`. The
-    service name is `https`. SSH certificated are searched for in
-    `/etc/ssl/<domain>.cert`. List websites in `/etc/https.csv` with
-    the following format:
-    
-        > <domain>,<host>:<port>
-    
-    Subcommands:
-    
-    ... show          : Show configuration.
-    ... domains       : Print configured domains.
-    ... config        : Print `haproxy` configuration file.
-    ... run           : Execute the service in foreground.
-    ... install SSH|- : Install `https` service. (Only Void Linux).
-    ... enable  SSH|- : Enable `https` service. (Only Void Linux).
-    ... disable SSH|- : Disable `https` service. (Only Void Linux).
-
-hvoid-server
-
-    Usage: hvoid-server [-r SSH] ...
+    Usage: setup-base SUBCOMMAND...
     
     Install base utilities and services I need for operating
     a server.
     
-    ... i-all     : i-{nonfree,base,shell,clock5}.
+    ... show      : Show configuration.
+    ... i-all     : All below.
     
-    ... i-clock5  : Install `clock5` service.
+    ... i-ssl     : Create ssl group.
     ... i-nonfree : Install nonfree repositories.
-    ... i-base    : Base utilities such as `nano`, `wget`, ...
-    ... i-shell   : Configure shell.
-    
-    ... i-chrony  : Install and enable chrony time daemon.
+    ... i-logging : Install logging utilities.
+    ... i-base    : Install base utilities and logging.
+    ... i-shell   : Configure the shell.
+    ... i-chrony  : Install and enable the *chrony* time daemon.
 
-minicgi
+setup-smtpd
 
-    Usage: minicgi ...
+    Usage: setup-smtpd ...
     
-    Serve CGI services using `mini_httpd(8)`.
+    Configure a `SMTP` mail server using `OpenSMTPD` and `rspamd`.
+    
+    Configuration files:
+     __________________________  _____________________  ________________________
+    | /etc/user2mail.cfg:      || /etc/mail2user.cfg: || SMTPD_DIR/domains.cfg |
+    |                          || EMAIL1 USER         || DOMAIN1               |
+    | USER EMAIL1[,EMAIL2,...] || EMAIL2 USER         || DOMAIN2               |
+    |__________________________||_____________________||_______________________|
+     ___________________________________________________
+    | /etc/ssl/DOMAIN.cert                              |
+    | /etc/ssl/DOMAIN.key                               |
+    | /etc/ssl/DOMAIN.dkim-sel  : Contains the DKIM id. |
+    | /etc/ssl/DKIM-ID.dkim-key                         |
+    | /etc/ssl/DKIM-ID.dkim-pub                         |
+    |___________________________________________________|
+    
+    Service names:
+      - Void Linux : opensmtpd, rspamd
+      - FreeBSD    : smtpd
+    PAM files:
+      - Void Linux : smtpd
+      - FreeBSD    : smtpd
+    Configuration files:
+      - Void Linux : /etc/smtpd/smtpd.conf
+                     /etc/rspamd/modules.d/dkim_signing.conf
+      - FreeBSD    : /usr/local/etc/mail/smtpd.conf
+                     /usr/local/etc/rspamd/modules.d/dkim_signing.conf
+    
+    Command line options:
+    
+    ... show              : Show system configuration.
+    ... install           : Install `OpenSMTPD` and `rspamd`.
+    ... setup INTFS...    : Setup `OpenSMTPD` and `rspamd`. (ie: lo eth0)
+    ... domain-add DOMAIN : Configure to service a domain.
+    ... domain-ls         : List serviced domains.
+    ... enable            : Enable OpenSMTPD and rspamd services.
+    ... restart           : Restart OpenSMTPD and rspamd  services.
+    ... status            : Check the status of the OpenSMTPD and rspamd service.
+    ... dns-record DOMAIN : Print DNS records for domain.
+
+setup-scron
+
+    Usage: setup-scron ...
+    
+    ... install-scron                 : Build/Install scron.
+    ... add-service NAME USER TABFILE : Create new service. (Void Linux)
+    ... add-service-user              : Create scron-USERNAME with ~/crontab.
+
+setup-msmtp
+
+    Usage: setup-msmtp ...
+    
+    Configure a `SMTP` mail client using `msmtp` for sending mails.
+    
+    Options: user,pass,host,port,use_starttls,use_tls,tls_certcheck
+    
+    ... show                    : Show system configuration.
+    ... install                 : Install `msmtp`.
+    ... a-list                  : List system accounts.
+    ... a-add  NAME   OPTS...   : Add system accounts.
+    ... a-test [NAME] [TO-ADDR] : Send a test mail (https://www.mail-tester.com/)
+    ... a-test-mailx ...        : Send a test mail with mailx.
+    ... a-del NAME...           : Delete accounts.
+    ... d-get                   : Get default account.
+    ... d-set ACCOUNT           : Set default account.
+    ... m-set [USERNAME] EMAIL  : Set mapping in /etc/aliases.
+    ... m-del USERNAME...       : Delete mapping from /etc/aliases.
+    ... m-list                  : List mapping in /etc/aliases.
+
+setup-mpop
+
+    Usage: setup-mpop ...
+    
+    Configure a `POP` mail client using `mpop` for receiving mails. For
+    getting mails type `mpop -a` or `mpop ACCOUNTS...`.
+    
+    Options: user,pass,use_tls,host,tls_certcheck
+    
+    ... show               : Show system configuration.
+    ... install            : Install mpop,mutt,w3m,xpdf,urlview.
+    ... a-list             : List defined accounts.
+    ... a-add NAME OPTS... : Add mpop account.
+    ... a-del NAME...      : Delete mpop accounts.
+
+setup-popd
+
+    Usage: setup-popd ...
+    
+    Configure a `POP` and `IMAP` mail retrieval service using `Dovecot`. Ports
+    are 143 and 993.
+    
+    ... show           : Show system configuration.
+    ... install/setup  : Install/configure `dovecot`.
+    ... enable/disable : Manage `dovecot`.
+    ... restart/status : Manage `dovecot`.
+
+setup-thttpd
+
+    Usage: setup-thttpd ...
+    
+    Serve CGI services using `thttpd(8)` on HTTP.
     
     ... show                       : Show configuration.
-    ... install                    : Download, build and install `mini_httpd(8)`.
-    ... run          USER PORT DIR : Execute `mini_httpd`.
+    ... install                    : Download, build and install `thttpd(8)`.
+    ... run          USER PORT DIR : Execute `thttpd`.
     ... create  NAME USER PORT DIR : Create service.
-    ... enable  NAME               : Enable service.
-    ... disable NAME               : Disable service.
 
-minidav
+setup-haproxy-https
 
-    Usage: minidav ...
+    Usage: setup-haproxy-https ...
     
-    Install `rclone` powered `webdav` service in `Void Linux`.
+    Configure a `HTTPS` proxy using `haproxy`. The service name generated
+    is `https`.
     
-    create  NAME USER PORT DIRECTORY : Install dav service.
-    enable  NAME                     : Enable dav service.
-    disable NAME                     : Disable dav service
-    manage  NAME                     : Open interactive manager.
-
-hdav
-
-    Usage: hdav ...
+    Supported operating systems: Void Linux.
     
-    Mount DAV filesystems as described in `/etc/hdav.csv` or
-    ${HDAV_CONFIG} as "<DIR>,<URL>,<USER>,<PASS>".
-    
-    ... show           : Show configuration.
-    ... install        : Install "davfs2" package.
-    ... list|l         : List posible mounts.
-    ... mount|m <DIR>  : Mount DAV remote directory.
-    ... umount|u <DIR> : Unmount directory.
-
-hvoid-wm
-
-    Usage: hvoid-wm ...
-    
-    My window manager and terminal configuration for Void Linux and Xorg.
-    
-    Config files:
-    
-        /etc/xsetup.sh    : This is executed by `x-setup-screen`.
-        ~/.background.png : Background image.
-        /etc/xapplets.sh  : This is executed by `x-setup-applets`.
-    
-    Operations:
-    
-        xorg-server          : Install Xorg server, screen light managers.
-        xorg-client          : Install Xorg client software.
-        scripts              : Install all x-* scripts below.
-        x-terminal-emulator  :
-        x-refresh-background :
-        x-setup-screen       :
-        x-setup-applets      :
-        i3-install           : Install I3.
-        i3-xinit             : Configure ~/.xinitrc to run I3.
-
-hvoid-audio
-
-    Usage: hvoid-audio ...
-    
-    Configure and test Audio in a "Void Linux" box.
-    
-    ... install-pulse             : Install pulseaudio and enable bluetooth.
-    ... direct-alsa-to-pulse      : Edit "/etc/asound.conf" to direct to pulse.
-    ... enable-pulse              : Enable "pulseaudio" service
-    ... allow-to-use-pulse [USER] : Add user to groups "pulse,pulse-access".
-    
-    ... enable-applet : Enable audio applet.
-    ... test-audio    : Test installed audio programs.
-
-hvoid-net
-
-    Usage: hvoid-net ...
-    
-    Configure networking in a Void Linux box.
-    
-    ... all               : Install all below.
-    ... bluetooth         : Install and enable "bluez" bluetooth service.
-    ... network-manager   : Install "ConnMan" network manager.
-    ... network-jail      : Install "firejail" network jail.
-    ... network-sniffer-x : Install "wireshark" network sniffer.
-    ... network-traffic   : Install "iptraf" network traffic monitor.
+    ... install                       : Install `haproxy`.
+    ... list                          : List added redirections.
+    ... add DOMAIN HOST[:PORT] [CERT] : Add https->http redirection.
+    ... del DOMAIN                    : Delete domain.
+    ... enable/status/disable/restart : Manage service.
 
 ## Collaboration
 
-For making bug reports, feature requests and donations visit one of the
-following links:
+For making bug reports, feature requests and donations visit
+one of the following links:
 
 1. [gemini://harkadev.com/oss/](gemini://harkadev.com/oss/)
 2. [https://harkadev.com/oss/](https://harkadev.com/oss/)

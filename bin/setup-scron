@@ -1,0 +1,98 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##:
+#h: Usage: $0 ...
+#h:
+#h: ... install-scron                 : Build/Install scron.
+#h: ... add-service NAME USER TABFILE : Create new service. (Void Linux)
+#h: ... add-service-user              : Create scron-USERNAME with ~/crontab.
+. hlog
+. vcd
+. vrun
+. hmain
+. hpkg
+. hfile
+. getsrc-git
+. hgmake
+setup_scron() {
+    local cmd="$1"
+    shift
+    case "${cmd}" in
+        install-scron)    scron_install                          ;;
+        add-service)      setup_scron_add "$@"                   ;;
+        add-service-user) setup_scron_add_user                   ;;
+        *)                hlog fatal "Invalid argument: ${cmd}." ;;
+    esac
+}
+## -----------------------------------------------------------------------------
+scron_install() {
+    local url="git://git.2f30.org/scron"
+    hlog info "Installing 'scron' ..."
+    if test ! -e /usr/sbin/scron;then
+        local pwd="`pwd`"
+        hpkg -m "Installing build dependencies for 'scron' ..." \
+             -i        \
+             -w "git"  \
+             -w "make" \
+             -w "gcc"  \
+             %xbps "git" "make" "gcc"
+        vcd + "`getsrc_git "${url}"`"
+        hgmake clean all CC="${CC:-gcc} -Wno-implicit-fallthrough -Wno-cpp"
+        vrun sudo cp "crond" "/usr/sbin/scron"
+        vcd - "`pwd`"
+    fi
+}
+setup_scron_add() { # SERVICE USERNAME TABFILE
+    local s="$1" u="$2" t="$3"
+    hlog errif "Please specify a service name." test ! -n "${s}"
+    hlog errif "Please specify username."       test ! -n "${u}"
+    hlog errif "Please specify a tabfile."      test ! -n "${t}"
+    hlog errif "${t}: File does not exist."     test ! -n "${t}"
+    hlog errif "scron not installed."           test ! -x "/usr/sbin/scron"
+    local d="/etc/sv/${s}"
+    local l="/var/log/${s}.log"
+    hlog info "Creating '${d}/run'"
+    hlog info "- Tab file: ${t}"
+    hlog info "- Log file: ${l}"
+    hfile wrapper sudo "${d}/run" <<-EOF
+	#!/bin/sh
+	rm -f "${l}"
+	touch "${l}"
+	chown "${u}:${u}" "${l}"
+	exec su -l -c "
+	/usr/sbin/scron -f '${t}' -n >> '${l}' 2>&1
+	" "${u}"
+	EOF
+}
+setup_scron_add_user() {
+    local s="scron-`whoami`"
+    local u="`whoami`"
+    local t="${HOME}/crontab"
+    touch "${t}"
+    setup_scron_add "${s}" "${u}" "${t}"
+}
+## -----------------------------------------------------------------------------
+hmain -f "setup-scron" setup_scron "$@"
