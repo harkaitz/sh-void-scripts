@@ -75,7 +75,7 @@ ssl_setup() {
     sudo usermod -a -G ssl "`whoami`"
 }
 nonfree_install() {
-    if hpkg -c @void;then
+    if hpkg -c @void; then
         hlog info "Updating XBPS and checking updates ..."
         sudo xbps-install -y -S      >/dev/null 2>&1
         sudo xbps-install -y -u xbps >/dev/null 2>&1
@@ -88,61 +88,74 @@ nonfree_install() {
                  -i                                               \
                  %xbps "void-repo-nonfree" "void-repo-multilib"
         fi
+    elif hpkg -c @rocky; then
+        hlog info "Updating and checking updates ..."
+        sudo yum -y update
+        sudo dnf -y install epel-release
+        sudo dnf -y install http://rpms.remirepo.net/enterprise/remi-release-8.rpm
+        sudo yum -y update
     fi
 }
 logging_install() {
-    if hpkg -c @void;then
+    if hpkg -c @void; then
         hlog info "Installing 'socklog' logging system ..."
-        if ! which socklog svlogtail >/dev/null 2>&1;then
+        if ! which socklog svlogtail >/dev/null 2>&1; then
             vrun sudo xbps-install -S -y socklog socklog-void
         fi
-        if test ! -e /etc/runit/runsvdir/default/socklog-unix;then
+        if test ! -e /etc/runit/runsvdir/default/socklog-unix; then
             vrun sudo ln -s /etc/sv/socklog-unix /etc/runit/runsvdir/default/
         fi
-        if test ! -e /etc/runit/runsvdir/default/;then
+        if test ! -e /etc/runit/runsvdir/default/; then
             vrun sudo ln -s /etc/sv/nanoklogd    /etc/runit/runsvdir/default/
         fi
         hlog info "Adding `whoami` to group socklog ..."
         sudo usermod -a -G socklog "`whoami`"
+    else
+        hlog info "Nothing extra needed for logging in this machine."
     fi
 }
 base_install() {
-    hpkg -m "I. SH utils: which, file, bc, busybox, killall" \
-         -i -w which -w file -w bc -w busybox -w killall     \
-         %xbps which file bc busybox-huge psmisc
-    hpkg -m "I. PKG management: xlocate" \
-         -i -w xlocate                   \
-         %xbps xtools
-    hpkg -m "I. Internet fetch: wget, curl, git, ssh, aria2c, SSL certificates"  \
-         -i -w wget -w curl -w git -w ssh -w update-ca-certificates -w aria2c -w rngd \
-         %xbps wget curl git openssh ca-certificates aria2c rng-tools
+    hpkg -m "I. SH utils: which, file, bc, busybox, killall, [slmenu]" \
+         -i -w which -w file -w bc -w killall `: -w slmenu`            \
+         %xbps which file bc psmisc slmenu                             \
+         %rpm  which file bc psmisc
+    if hpkg -c @void; then
+        hpkg -m "I. PKG management: xlocate" \
+             -i -w xlocate -w rngd           \
+             %xbps xtools rng-tools
+    fi
+    hpkg -m "I. Internet fetch: wget, curl, git, ssh, sshpass, aria2c, SSL certificates"  \
+         -i -w wget -w curl -w git -w ssh -w sshpass -w aria2c  \
+         %xbps wget curl git openssh sshpass aria2 ca-certificates \
+         %rpm  wget curl git openssh sshpass aria2 ca-certificates
     hpkg -m "I. text editors: nano, mg" \
          -i -w nano -w mg               \
-         %xbps nano mg
+         %xbps nano mg                  \
+         %rpm  nano mg
     hpkg -m "I. archiving tools: unzip, bzip2, xz, tar, 7z, bsdtar, unrar" \
          -i -w unzip -w bzip2 -w xz -w tar -w 7z -w bsdtar -w unrar        \
-         %xbps unzip bzip2 xz tar p7zip bsdtar unrar
-    hpkg -m "I. monitors: htop, ncdu, iotop, pstree" \
-         -i -w htop -w ncdu -w iotop -w pstree       \
-         %xbps htop ncdu iotop psmisc
-    hpkg -m "I. network utils: dig, nmap, lsof, netstat, upnpc" \
-         -i -w dig -w nmap -w lsof -w netstat -w upnpc          \
-         %xbps bind-utils nmap lsof net-tools miniupnpc
-    hpkg -m "I. parsers/encoders: qrencode, jq, hxselect, mdp" \
-         -i -w qrencode -w jq -w hxselect -w mdp               \
-         %xbps qrencode jq html-xml-utils mdp
+         %xbps unzip bzip2 xz tar p7zip               bsdtar unrar \
+         %rpm  unzip bzip2 xz tar p7zip p7zip-plugins bsdtar unrar
+    hpkg -m "I. monitors: htop, ncdu, iotop, pstree, neofetch"  \
+         -i -w htop -w ncdu -w iotop -w pstree -w neofetch      \
+         %xbps htop ncdu iotop psmisc neofetch                  \
+         %rpm  htop ncdu iotop psmisc neofetch
+    hpkg -m "I. network utils: dig, nmap, lsof, netstat, [upnpc]" \
+         -i -w dig -w nmap -w lsof -w netstat                     \
+         %xbps bind-utils nmap lsof net-tools miniupnpc \
+         %rpm  bind-utils nmap lsof net-tools miniupnpc
+    hpkg -m "I. parsers/encoders: qrencode, jq, [hxselect, mdp]" \
+         -i -w qrencode -w jq `: -w hxselect -w mdp`             \
+         %xbps qrencode jq html-xml-utils mdp                    \
+         %rpm  qrencode jq 
     hpkg -m "I. network tunnels: openssl, nc, socat, telnet" \
          -i -w openssl -w nc -w socat -w telnet              \
-         %xbps openssl openbsd-netcat socat inetutils-telnet
-    hpkg -m "I. password management: pass, gpg2, pinentry-tty" \
-         -i -w pass -w gpg2 -w pinentry-tty                    \
-         %xbps pass gnupg2  pinentry-tty
-    hpkg -m "I. System monitors." \
-         -i -w neofetch -w htop \
-         %xbps neofetch htop
-    hpkg -m "I. TUI programs." \
-         -i -w slmenu \
-         %xbps slmenu
+         %xbps openssl openbsd-netcat socat inetutils-telnet \
+         %rpm  openssl         netcat socat           telnet
+    hpkg -m "I. password management: pass, gpg2, [pinentry-tty]" \
+         -i -w pass -w gpg2 `: -w pinentry-tty`                  \
+         %xbps pass gnupg2  pinentry-tty                         \
+         %rpm  pass gnupg2  
 }
 shell_install() {
     hlog info "Installing /etc/profile.d/ps1.sh ..."
@@ -160,18 +173,20 @@ shell_install() {
 	EOF
 }
 chrony_install() {
-    hpkg -m "Installing chrony ..." \
-         -w "chronyd" \
-         -i %xbps "chrony"
     hlog info "Creating /etc/localtime ..."
-    if test ! -e /etc/localtime;then
-        sudo ln -sf "/usr/share/zoneinfo/${LOCATION}" "/etc/localtime"
+    sudo rm -f "/etc/localtime"
+    sudo ln -sf "/usr/share/zoneinfo/${LOCATION}" "/etc/localtime"
+    if hpkg -c @void; then
+        hpkg -m "Installing chrony ..." \
+             -w "chronyd" \
+             -i %xbps "chrony"        
+        hlog info "Creating /etc/runit/runsvdir/default/chronyd ..."
+        if test ! -e /etc/runit/runsvdir/default/chronyd; then
+            sudo ln -s "/etc/sv/chronyd" /etc/runit/runsvdir/default/chronyd
+        fi
+    else
+        hlog info "Nothing extra needed to update time in this machine."
     fi
-    hlog info "Creating /etc/runit/runsvdir/default/chronyd ..."
-    if test ! -e /etc/runit/runsvdir/default/chronyd;then
-        sudo ln -s "/etc/sv/chronyd" /etc/runit/runsvdir/default/chronyd
-    fi
-    
 }
 ## -----------------------------------------------------------------------------
 python_install() {

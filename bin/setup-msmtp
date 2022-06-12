@@ -85,6 +85,14 @@ setup_msmtp_calc_variables() {
             local d_MAILX="/usr/bin/mail"
             local d_MAILX_CFGS="/etc/mailx.rc /etc/mail.rc"
             ;;
+        rocky)
+            local d_CA_BUNDLE="/etc/ssl/certs/ca-bundle.crt"
+            local d_MSMTP="/usr/bin/msmtp"
+            local d_MSMTP_CFG="/etc/msmtprc"
+            local d_ALIAS_FILE="/etc/aliases"
+            local d_MAILX="/usr/bin/mail"
+            local d_MAILX_CFGS="/etc/mailx.rc /etc/mail.rc"
+            ;;
         freebsd)
             local d_CA_BUNDLE="/usr/local/share/certs/ca-root-nss.crt"
             local d_MSMTP="/usr/local/bin/msmtp"
@@ -113,10 +121,10 @@ setup_msmtp_calc_variables() {
 setup_msmtp_install() {
     hpkg -m 'Installing CA certificates...' \
          -w "${CA_BUNDLE}"                  \
-         -i %pkg "ca_root_nss" %xbps "ca-certificates"
+         -i %pkg "ca_root_nss" %xbps "ca-certificates" %rpm "ca-certificates"
     hpkg -m 'Installing msmtp ...' \
          -w "${MSMTP}"             \
-         -i %pkg "msmtp"       %xbps "msmtp"
+         -i %pkg "msmtp"       %xbps "msmtp" %rpm "msmtp"
     hlog info 'Installing BSD mailx ...'
     if test -e "${MAILX}"; then
         local mailx_not_found="`mail --version 2>/dev/null | grep GNU`"
@@ -124,7 +132,7 @@ setup_msmtp_install() {
         local mailx_not_found=y
     fi
     if test -n "${mailx_not_found}"; then
-        hpkg -i %xbps "mailx"
+        hpkg -i %xbps "mailx" %rpm "mailx"
     fi
     hlog info "Creating wrapper /usr/bin/send-mail ..."
     hlog info "=> This wrapper takes the MAIL_ACCOUNT environment variable"
