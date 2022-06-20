@@ -140,6 +140,14 @@ setup-smtpd
     ... status            : Check the status of the OpenSMTPD and rspamd service.
     ... dns-record DOMAIN : Print DNS records for domain.
 
+setup-socat-proxy
+
+    Usage: setup-socat-proxy ...
+    
+    Configure proxies using `socat(1)`.
+    
+    ... add-tcp NAME PORT TO:PORT : Create service with simple TCP proxy.
+
 setup-thttpd
 
     Usage: setup-thttpd ...

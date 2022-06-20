@@ -3,7 +3,7 @@
 #L:  MIT License
 #L:  
 #l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
-#l:  Copyright (c)  Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
 #L:
 #L:  Permission is hereby granted, free of charge, to any person obtaining
 #L:  a copy of this software and associated documentation files (the
@@ -87,6 +87,7 @@ nonfree_install() {
                  -w /usr/share/xbps.d/10-repository-multilib.conf \
                  -i                                               \
                  %xbps "void-repo-nonfree" "void-repo-multilib"
+            vrun sleep 2
         fi
     elif hpkg -c @rocky; then
         hlog info "Updating and checking updates ..."
@@ -98,6 +99,7 @@ nonfree_install() {
 }
 logging_install() {
     if hpkg -c @void; then
+        # https://riedstra.dev/2018/12/void-logging-firewall-backups-void-linux-part2
         hlog info "Installing 'socklog' logging system ..."
         if ! which socklog svlogtail >/dev/null 2>&1; then
             vrun sudo xbps-install -S -y socklog socklog-void
@@ -115,9 +117,9 @@ logging_install() {
     fi
 }
 base_install() {
-    hpkg -m "I. SH utils: which, file, bc, busybox, killall, [slmenu]" \
-         -i -w which -w file -w bc -w killall `: -w slmenu`            \
-         %xbps which file bc psmisc slmenu                             \
+    hpkg -m "I. SH utils: which, file, bc, busybox, killall" \
+         -i -w which -w file -w bc -w killall                \
+         %xbps which file bc psmisc                          \
          %rpm  which file bc psmisc
     if hpkg -c @void; then
         hpkg -m "I. PKG management: xlocate" \
@@ -132,10 +134,10 @@ base_install() {
          -i -w nano -w mg               \
          %xbps nano mg                  \
          %rpm  nano mg
-    hpkg -m "I. archiving tools: unzip, bzip2, xz, tar, 7z, bsdtar, unrar" \
-         -i -w unzip -w bzip2 -w xz -w tar -w 7z -w bsdtar -w unrar        \
-         %xbps unzip bzip2 xz tar p7zip               bsdtar unrar \
-         %rpm  unzip bzip2 xz tar p7zip p7zip-plugins bsdtar unrar
+    hpkg -m "I. archiving tools: unzip, bzip2, xz, tar, 7z, bsdtar" \
+         -i -w unzip -w bzip2 -w xz -w tar -w 7z -w bsdtar          \
+         %xbps unzip bzip2 xz tar p7zip               bsdtar        \
+         %rpm  unzip bzip2 xz tar p7zip p7zip-plugins bsdtar
     hpkg -m "I. monitors: htop, ncdu, iotop, pstree, neofetch"  \
          -i -w htop -w ncdu -w iotop -w pstree -w neofetch      \
          %xbps htop ncdu iotop psmisc neofetch                  \

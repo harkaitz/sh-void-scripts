@@ -1,0 +1,73 @@
+#!/bin/sh -e
+#L:
+#L:  MIT License
+#L:  
+#l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#L:
+#L:  Permission is hereby granted, free of charge, to any person obtaining
+#L:  a copy of this software and associated documentation files (the
+#L:  "Software"), to deal in the Software without restriction, including
+#L:  without limitation the rights to use, copy, modify, merge, publish,
+#L:  distribute, sublicense, and/or sell copies of the Software, and to
+#L:  permit persons to whom the Software is furnished to do so, subject to
+#L:  the following conditions:
+#L:
+#L:  The above copyright notice and this permission notice shall be
+#L:  included in all copies or substantial portions of the Software.
+#L:
+#L:  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+#L:  EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+#L:  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+#L:  NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
+#L:  LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+#L:  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+#L:  WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##:
+#h: Usage: $0 ...
+#h:
+#h: Configure proxies using `socat(1)`.
+#h:
+#h: ... add-tcp NAME PORT TO:PORT : Create service with simple TCP proxy.
+##:
+. hlog
+. hpkg
+. hfile
+. hmain
+setup_socat_proxy() {
+    local cmd="$1"
+    shift
+    case "${cmd}" in
+        add-tcp) socat_create_proxy_tcp "$@" ;;
+        *)       hlog error "Invalid argument: ${cmd}."; return 1;;
+    esac
+}
+## -----------------------------------------------------------------------------
+socat_create_proxy_tcp() {
+    local name="$1" fr="$2" to="$3"
+    case "${name}" in
+        '') hlog error "Please specify a name."; return 1;;
+    esac
+    case "${fr}" in
+        '') hlog error "Please specify a from port."; return 1;;
+    esac
+    case "${to}" in
+        '')  hlog error "Please specify a to address."; return 1;;
+        *:*) true;;
+        *)   hlog error "Invalid format: ${to}."; return 1;;
+    esac
+    if hpkg -c @void; then
+        hlog info "Creating /etc/sv/${name}/run ..."
+        mkdir -p "/etc/sv/${name}"
+        hfile wrapper sudo "/etc/sv/${name}/run" <<-EOF
+	#!/bin/sh
+	exec socat -d TCP-LISTEN:${fr},fork TCP:${to}
+	EOF
+    fi
+}
+
+
+
+
+## -----------------------------------------------------------------------------
+hmain -f "setup-socat-proxy" setup_socat_proxy "$@"

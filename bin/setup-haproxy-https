@@ -3,7 +3,7 @@
 #L:  MIT License
 #L:  
 #l:  Bug reports, feature requests to gemini|https://harkadev.com/oss
-#l:  Copyright (c)  Harkaitz Agirre, harkaitz.aguirre@gmail.com
+#l:  Copyright (c) 2022 Harkaitz Agirre, harkaitz.aguirre@gmail.com
 #L:
 #L:  Permission is hereby granted, free of charge, to any person obtaining
 #L:  a copy of this software and associated documentation files (the
@@ -49,10 +49,10 @@ setup_haproxy_https() {
         list)    setup_haproxy_https_list              ;;
         add)     setup_haproxy_https_add "$@"          ;;
         del)     setup_haproxy_https_del "$@"          ;;
-        enable)  hpkg -E @void httpd                   ;;
-        status)  hpkg -V @void httpd                   ;;
-        disable) hpkg -X @void httpd                   ;;
-        restart) hpkg -R @void httpd                   ;;
+        enable)  hpkg -E @void https                   ;;
+        status)  hpkg -V @void https                   ;;
+        disable) hpkg -X @void https                   ;;
+        restart) hpkg -R @void https                   ;;
         *)       hlog fatal "Invalid argument: ${cmd}" ;;
     esac
 }
@@ -110,7 +110,7 @@ setup_haproxy_https_list() {
     sed -n 's/^ *use_backend  *proxy-.* -i \([^ ]*\).*/\1/p' "${HAPROXY_CFG}"
 }
 setup_haproxy_https_add() {
-    local domain="$1" host_port="$2" certfile="${3:-/etc/ssl/$1.cert}"
+    local domain="$1" host_port="$2" certfile="${3:-/etc/ssl/`echo "$1" | sed 's|^www.||'`.cert}"
     hlog errif "Please specify a domain name." test ! -n "${domain}"
     hlog errif "Please specify a host[:port]." test ! -n "${host_port}"
     hlog errif "${certfile}: File not found."  test ! -e "${certfile}"
@@ -131,7 +131,7 @@ setup_haproxy_https_add() {
 	    server loopback-for-tls abns@haproxy-${name} send-proxy-v2
 	frontend https-${name}
 	    mode http
-	    bind abns@haproxy-${name} accept-proxy ssl crt /etc/ssl/${domain}.cert force-tlsv12
+	    bind abns@haproxy-${name} accept-proxy ssl crt ${certfile} force-tlsv12
 	    use_backend backend-${name}
 	backend backend-${name}
 	    mode http
