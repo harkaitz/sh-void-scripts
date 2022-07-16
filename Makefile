@@ -1,15 +1,19 @@
 DESTDIR     =
 PREFIX      =/usr/local
-SCRIPTS_BIN =$(shell test ! -d bin || find bin -executable -type f)
-MANPAGES_1  =$(shell test ! -d man || find man -iregex '.*\.1$$')
 all:
 clean:
 install:
-    ifneq ($(SCRIPTS_BIN),)
+## -- license --
+ifneq ($(PREFIX),)
+install: install-license
+install-license: LICENSE
+	mkdir -p $(DESTDIR)$(PREFIX)/share/doc/sh-void-scripts
+	cp LICENSE $(DESTDIR)$(PREFIX)/share/doc/sh-void-scripts
+endif
+## -- license --
+## -- install-sh --
+install: install-sh
+install-sh:
 	mkdir -p $(DESTDIR)$(PREFIX)/bin
-	cp $(SCRIPTS_BIN) $(DESTDIR)$(PREFIX)/bin
-    endif
-    ifneq ($(MANPAGES_1),)
-	mkdir -p $(DESTDIR)$(PREFIX)/share/man/man1
-	cp $(MANPAGES_1) $(DESTDIR)$(PREFIX)/share/man/man1
-    endif
+	cp bin/setup-socat-proxy bin/setup-base bin/setup-smtpd bin/setup-scron bin/setup-msmtp bin/setup-mpop bin/setup-popd bin/setup-thttpd bin/setup-haproxy-https  $(DESTDIR)$(PREFIX)/bin
+## -- install-sh --
